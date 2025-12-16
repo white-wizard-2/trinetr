@@ -1,0 +1,261 @@
+.model-info-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.95);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.model-info-content {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.model-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.model-info-header h2 {
+  color: #667eea;
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.model-subtitle {
+  color: #888;
+  margin: 0.5rem 0 0 0;
+  font-size: 0.9rem;
+}
+
+.model-info-close {
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 1.5rem;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.model-info-close:hover {
+  background: #444;
+  border-color: #667eea;
+  color: #667eea;
+}
+
+.model-info-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.info-section {
+  margin-bottom: 2rem;
+}
+
+.info-section:last-child {
+  margin-bottom: 0;
+}
+
+.info-section h3 {
+  color: #667eea;
+  margin: 0 0 1rem 0;
+  font-size: 1.3rem;
+  border-bottom: 2px solid #333;
+  padding-bottom: 0.5rem;
+}
+
+.info-section p {
+  color: #e0e0e0;
+  line-height: 1.8;
+  margin-bottom: 1rem;
+}
+
+.model-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 4px;
+}
+
+.stat-item {
+  color: #e0e0e0;
+  font-size: 0.95rem;
+}
+
+.stat-item strong {
+  color: #667eea;
+  margin-right: 0.5rem;
+}
+
+.data-flow-diagram {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 1.5rem;
+  font-family: 'Courier New', monospace;
+}
+
+.flow-item {
+  color: #e0e0e0;
+  padding: 0.5rem 0;
+  font-size: 0.95rem;
+  border-left: 3px solid #667eea;
+  padding-left: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.flow-item.input {
+  background: rgba(102, 126, 234, 0.1);
+  border-left-color: #43e97b;
+  font-weight: 600;
+  color: #43e97b;
+}
+
+.layers-table {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.layer-row {
+  display: grid;
+  grid-template-columns: 150px 180px 1fr;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid #333;
+  transition: background 0.2s;
+}
+
+.layer-row:hover {
+  background: rgba(102, 126, 234, 0.05);
+}
+
+.layer-row:last-child {
+  border-bottom: none;
+}
+
+.layer-name {
+  color: #667eea;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.layer-type {
+  color: #888;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+.layer-details {
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  font-family: 'Courier New', monospace;
+}
+
+.operation-detail {
+  background: rgba(102, 126, 234, 0.1);
+  border-left: 3px solid #667eea;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-radius: 4px;
+}
+
+.operation-detail h4 {
+  color: #667eea;
+  margin: 0 0 0.75rem 0;
+  font-size: 1.1rem;
+}
+
+.operation-detail p {
+  color: #e0e0e0;
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+}
+
+.operation-detail ul {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+  color: #e0e0e0;
+  line-height: 1.8;
+}
+
+.operation-detail li {
+  margin-bottom: 0.5rem;
+}
+
+.operation-structure,
+.operation-diagram,
+.operation-example,
+.operation-comparison {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.operation-structure strong,
+.operation-diagram strong,
+.operation-example strong,
+.operation-comparison strong {
+  color: #667eea;
+  margin-right: 0.5rem;
+}
+
+.operation-structure code,
+.operation-diagram code {
+  color: #43e97b;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+}
+
+.learning-points {
+  background: rgba(102, 126, 234, 0.1);
+  border-left: 3px solid #667eea;
+  padding: 1.5rem;
+  border-radius: 4px;
+  margin: 0;
+  padding-left: 2rem;
+}
+
+.learning-points li {
+  color: #e0e0e0;
+  line-height: 1.8;
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.learning-points li:last-child {
+  margin-bottom: 0;
+}
+
