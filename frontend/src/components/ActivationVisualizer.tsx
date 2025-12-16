@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import AllChannelsModal from './AllChannelsModal'
+import LinearLayerVisualizer from './LinearLayerVisualizer'
 import './ActivationVisualizer.css'
 
 // Colormap functions
@@ -140,7 +141,7 @@ interface ActivationVisualizerProps {
   modelId: string
   layerName: string
   imageFile: File
-  onActivationsLoaded: (activations: any) => void
+  onActivationsLoaded?: (activations: any) => void
 }
 
 function ActivationVisualizer({
@@ -175,7 +176,7 @@ function ActivationVisualizer({
         )
         
         setActivations(response.data)
-        onActivationsLoaded(response.data)
+        onActivationsLoaded?.(response.data)
       } catch (err: any) {
         setError(err.response?.data?.detail || 'Failed to load activations')
       } finally {
@@ -188,8 +189,10 @@ function ActivationVisualizer({
     }
   }, [modelId, layerName, imageFile, onActivationsLoaded])
 
-  // Separate effect for drawing canvas when activations change
+  // Separate effect for drawing canvas when activations change (skip for linear layers)
   useEffect(() => {
+    if (activations?.is_linear) return // Skip canvas drawing for linear layers
+    
     if (canvasRef.current && activations && activations.activations) {
       const canvas = canvasRef.current
       const ctx = canvas.getContext('2d')
@@ -271,8 +274,20 @@ function ActivationVisualizer({
       {activations && (
         <>
           <div className="activation-stats">
+            {activations.previous_layer && (
+              <div className="stat stat-highlight">
+                <span className="stat-label">Previous Layer:</span>
+                <span className="stat-value">{activations.previous_layer}</span>
+              </div>
+            )}
+            {activations.input_shape && (
+              <div className="stat stat-highlight">
+                <span className="stat-label">Input Shape:</span>
+                <span className="stat-value">{activations.input_shape}</span>
+              </div>
+            )}
             <div className="stat">
-              <span className="stat-label">Shape:</span>
+              <span className="stat-label">Output Shape:</span>
               <span className="stat-value">{activations.shape?.join(' × ')}</span>
             </div>
             {activations.num_channels && (
@@ -296,49 +311,43 @@ function ActivationVisualizer({
           </div>
           
           <div className="visualization">
-            <div className="viz-section">
-              <div className="section-header">
-                <div>
-                  <h3>Mean Activation Map</h3>
-                  <p className="viz-description">Average across all channels - shows overall feature response</p>
+            {activations.is_linear ? (
+              <LinearLayerVisualizer
+                activations={activations.activations}
+                topActivations={activations.top_activations}
+                layerName={layerName}
+              />
+            ) : (
+              <>
+                <div className="viz-section">
+                  <div className="section-header">
+                    <div>
+                      <h3>Mean Activation Map</h3>
+                      <p className="viz-description">Average across all channels - shows overall feature response</p>
+                    </div>
+                    <div className="colormap-selector">
+                      <label>Colormap:</label>
+                      <select 
+                        value={colormap} 
+                        onChange={(e) => setColormap(e.target.value)}
+                        className="colormap-select"
+                      >
+                        <option value="grayscale">Grayscale</option>
+                        <option value="jet">Jet</option>
+                        <option value="viridis">Viridis</option>
+                        <option value="hot">Hot</option>
+                        <option value="cool">Cool</option>
+                      </select>
+                    </div>
+                  </div>
+                  <canvas ref={canvasRef} className="activation-canvas" />
                 </div>
-                <div className="colormap-selector">
-                  <label>Colormap:</label>
-                  <select 
-                    value={colormap} 
-                    onChange={(e) => setColormap(e.target.value)}
-                    className="colormap-select"
-                  >
-                    <option value="grayscale">Grayscale</option>
-                    <option value="jet">Jet</option>
-                    <option value="viridis">Viridis</option>
-                    <option value="hot">Hot</option>
-                    <option value="cool">Cool</option>
-                  </select>
-                </div>
-              </div>
-              <canvas ref={canvasRef} className="activation-canvas" />
-            </div>
+              </>
+            )}
             
-            <div className="color-explanation">
-              <h4>🎨 Why are feature maps grayscale?</h4>
-              <p>
-                Each channel outputs a <strong>single activation value</strong> per pixel (not RGB). 
-                The original RGB image (3 channels) gets processed through convolutional layers:
-              </p>
-              <ul>
-                <li><strong>Input:</strong> RGB image (3 channels: Red, Green, Blue)</li>
-                <li><strong>First Conv Layer:</strong> Takes 3 input channels, produces many output channels (e.g., 64)</li>
-                <li><strong>Each output channel:</strong> Detects different features (edges, textures, patterns)</li>
-                <li><strong>Color information:</strong> Gets "distributed" across multiple feature maps through learned weights</li>
-              </ul>
-              <p>
-                Use colormaps above to visualize activation <strong>intensity</strong> in color - 
-                this helps see patterns but doesn't represent original RGB colors.
-              </p>
-            </div>
+           
             
-            {activations.channels && activations.channels.length > 0 && (
+            {!activations.is_linear && activations.channels && activations.channels.length > 0 && (
               <div className="viz-section">
                 <div className="section-header">
                   <div>

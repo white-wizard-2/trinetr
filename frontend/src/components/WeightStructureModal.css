@@ -1,0 +1,367 @@
+.weight-structure-modal {
+  max-width: 1200px;
+  width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.weight-structure-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.5rem;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.weight-structure-modal .modal-header h2 {
+  margin: 0 0 0.5rem 0;
+  color: #667eea;
+}
+
+.weight-summary {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: #888;
+  margin-top: 0.5rem;
+}
+
+.weight-summary span {
+  font-family: 'Courier New', monospace;
+}
+
+.weight-structure-modal .modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.weight-explanation {
+  background: rgba(67, 233, 123, 0.1);
+  border-left: 3px solid #43e97b;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  border-radius: 4px;
+}
+
+.weight-explanation h3 {
+  color: #43e97b;
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+}
+
+.weight-explanation ul {
+  margin: 0;
+  padding-left: 1.5rem;
+  color: #e0e0e0;
+  line-height: 1.8;
+  font-size: 0.9rem;
+}
+
+.weight-explanation li {
+  margin-bottom: 0.5rem;
+}
+
+.weight-explanation strong {
+  color: #43e97b;
+}
+
+.layers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.layer-weight-item {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.layer-weight-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #0a0a0a;
+}
+
+.layer-weight-header:hover {
+  background: #1f1f1f;
+  border-color: #667eea;
+}
+
+.toggle-icon {
+  color: #667eea;
+  font-weight: bold;
+  width: 20px;
+  text-align: center;
+}
+
+.layer-name {
+  flex: 1;
+  color: #e0e0e0;
+  font-weight: 500;
+  font-family: 'Courier New', monospace;
+}
+
+.layer-type {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.param-count {
+  color: #43e97b;
+  font-family: 'Courier New', monospace;
+  font-weight: 600;
+}
+
+.layer-weight-details {
+  padding: 1rem;
+  background: #0a0a0a;
+  border-top: 1px solid #333;
+}
+
+.layer-details {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: rgba(102, 126, 234, 0.1);
+  border-left: 3px solid #667eea;
+  border-radius: 4px;
+}
+
+.layer-details h4 {
+  color: #667eea;
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+}
+
+.layer-details pre {
+  color: #e0e0e0;
+  font-size: 0.85rem;
+  margin: 0;
+  font-family: 'Courier New', monospace;
+  white-space: pre-wrap;
+}
+
+.parameters-section,
+.buffers-section {
+  margin-bottom: 1.5rem;
+}
+
+.section-header-with-explanation {
+  margin-bottom: 1rem;
+}
+
+.parameters-section h4,
+.buffers-section h4 {
+  color: #667eea;
+  margin: 0 0 0.75rem 0;
+  font-size: 0.95rem;
+}
+
+.section-explanation {
+  background: rgba(102, 126, 234, 0.1);
+  border-left: 3px solid #667eea;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.section-explanation p {
+  margin: 0 0 0.5rem 0;
+  color: #e0e0e0;
+}
+
+.section-explanation ul {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  color: #aaa;
+}
+
+.section-explanation li {
+  margin-bottom: 0.25rem;
+}
+
+.section-explanation strong {
+  color: #667eea;
+}
+
+.details-explanation {
+  margin-bottom: 0.75rem;
+  padding: 0.5rem;
+  background: rgba(67, 233, 123, 0.1);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.details-explanation strong {
+  color: #43e97b;
+}
+
+.type-explanation {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(102, 126, 234, 0.1);
+  border-left: 3px solid #667eea;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.type-explanation strong {
+  color: #667eea;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.type-explanation ul {
+  margin: 0.5rem 0 0 0;
+  padding-left: 1.5rem;
+  color: #aaa;
+  line-height: 1.6;
+}
+
+.type-explanation li {
+  margin-bottom: 0.25rem;
+}
+
+.parameter-item,
+.buffer-item {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.parameter-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #333;
+}
+
+.param-name {
+  color: #43e97b;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  font-size: 0.95rem;
+}
+
+.param-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.param-badge.trainable {
+  background: rgba(67, 233, 123, 0.2);
+  color: #43e97b;
+  border: 1px solid #43e97b;
+}
+
+.param-badge.frozen {
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff6b6b;
+  border: 1px solid #ff6b6b;
+}
+
+.param-badge.buffer {
+  background: rgba(102, 126, 234, 0.2);
+  color: #667eea;
+  border: 1px solid #667eea;
+}
+
+.parameter-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.info-label {
+  color: #888;
+  font-size: 0.8rem;
+}
+
+.info-value {
+  color: #e0e0e0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.info-hint {
+  color: #666;
+  font-size: 0.75rem;
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+
+.parameter-explanation {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(67, 233, 123, 0.1);
+  border-left: 3px solid #43e97b;
+  border-radius: 4px;
+}
+
+.parameter-explanation details {
+  cursor: pointer;
+}
+
+.parameter-explanation summary {
+  color: #43e97b;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  user-select: none;
+}
+
+.parameter-explanation summary:hover {
+  color: #667eea;
+}
+
+.parameter-explanation ul {
+  margin: 0.5rem 0 0 0;
+  padding-left: 1.5rem;
+  color: #e0e0e0;
+  line-height: 1.8;
+  font-size: 0.85rem;
+}
+
+.parameter-explanation li {
+  margin-bottom: 0.5rem;
+}
+
+.parameter-explanation strong {
+  color: #43e97b;
+}
+
+.loading,
+.error {
+  text-align: center;
+  padding: 2rem;
+  color: #888;
+}
+
+.error {
+  color: #ff6b6b;
+}
+

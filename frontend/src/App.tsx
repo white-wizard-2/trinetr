@@ -10,7 +10,6 @@ function App() {
   const [modelId, setModelId] = useState<string | null>(null)
   const [selectedLayer, setSelectedLayer] = useState<string | null>(null)
   const [imageFile, setImageFile] = useState<File | null>(null)
-  const [activations, setActivations] = useState<any>(null)
 
   // Load default image on mount
   useEffect(() => {
@@ -70,7 +69,6 @@ function App() {
                     modelId={modelId}
                     layerName={selectedLayer}
                     imageFile={imageFile}
-                    onActivationsLoaded={setActivations}
                   />
                 ) : (
                   <div className="info-box">

@@ -89,6 +89,90 @@ async def load_model(model_name: str = "resnet18"):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/models/{model_id}/weight-structure")
+async def get_weight_structure(model_id: str):
+    """Get detailed weight structure information for a model"""
+    if model_id not in loaded_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model = loaded_models[model_id]
+    weight_structure = []
+    total_params = 0
+    total_trainable = 0
+    
+    for name, module in model.named_modules():
+        if len(list(module.children())) == 0:  # Leaf modules only
+            layer_info = {
+                "layer_name": name,
+                "layer_type": type(module).__name__,
+                "parameters": {}
+            }
+            
+            # Get all parameters (weights, biases, etc.)
+            for param_name, param in module.named_parameters(recurse=False):
+                param_data = {
+                    "shape": list(param.shape),
+                    "numel": int(param.numel()),
+                    "requires_grad": bool(param.requires_grad),
+                    "dtype": str(param.dtype),
+                    "min": float(param.data.min().item()) if param.numel() > 0 else 0.0,
+                    "max": float(param.data.max().item()) if param.numel() > 0 else 0.0,
+                    "mean": float(param.data.mean().item()) if param.numel() > 0 else 0.0,
+                    "std": float(param.data.std().item()) if param.numel() > 0 else 0.0
+                }
+                layer_info["parameters"][param_name] = param_data
+                total_params += param_data["numel"]
+                if param_data["requires_grad"]:
+                    total_trainable += param_data["numel"]
+            
+            # Get buffers (like running_mean, running_var for BatchNorm)
+            buffers = {}
+            for buffer_name, buffer in module.named_buffers(recurse=False):
+                buffers[buffer_name] = {
+                    "shape": list(buffer.shape),
+                    "numel": int(buffer.numel()),
+                    "dtype": str(buffer.dtype)
+                }
+            
+            if buffers:
+                layer_info["buffers"] = buffers
+            
+            # Add layer-specific information
+            if isinstance(module, nn.Conv2d):
+                layer_info["details"] = {
+                    "in_channels": module.in_channels,
+                    "out_channels": module.out_channels,
+                    "kernel_size": list(module.kernel_size) if hasattr(module.kernel_size, '__iter__') else [module.kernel_size],
+                    "stride": list(module.stride) if hasattr(module.stride, '__iter__') else [module.stride],
+                    "padding": list(module.padding) if hasattr(module.padding, '__iter__') else [module.padding],
+                    "has_bias": module.bias is not None
+                }
+            elif isinstance(module, nn.Linear):
+                layer_info["details"] = {
+                    "in_features": module.in_features,
+                    "out_features": module.out_features,
+                    "has_bias": module.bias is not None
+                }
+            elif isinstance(module, nn.BatchNorm2d):
+                layer_info["details"] = {
+                    "num_features": module.num_features,
+                    "eps": module.eps,
+                    "momentum": module.momentum,
+                    "affine": module.affine,
+                    "track_running_stats": module.track_running_stats
+                }
+            
+            if layer_info["parameters"] or buffers:
+                weight_structure.append(layer_info)
+    
+    return {
+        "model_id": model_id,
+        "total_parameters": total_params,
+        "trainable_parameters": total_trainable,
+        "non_trainable_parameters": total_params - total_trainable,
+        "layers": weight_structure
+    }
+
 @app.get("/models/{model_id}/layers")
 async def get_model_layers(model_id: str):
     """Get all layers of a loaded model"""
@@ -123,16 +207,84 @@ async def get_model_layers(model_id: str):
             elif "AdaptiveAvgPool2d" in layer_type:
                 layer_info["description"] = "Adaptive average pooling - global pooling"
             elif "Linear" in layer_type:
-                layer_info["description"] = f"Fully connected layer - {module.out_features} outputs"
+                layer_info["description"] = f"Fully connected layer - {module.out_features} outputs (FINAL LAYER - produces class probabilities)"
             else:
                 layer_info["description"] = f"{layer_type} layer"
             
             layers.append(layer_info)
             layer_map[name] = layer_info
     
-    # Build connections (simplified - sequential for most CNNs)
-    for i in range(len(layers) - 1):
-        layers[i]["next"] = layers[i + 1]["name"]
+    # Sort layers by execution order
+    # Define execution order for root layers (no prefix)
+    def get_execution_order(layer):
+        name = layer["name"].lower()
+        layer_type = layer["type"]
+        full_name = layer["name"]
+        
+        # Check if this is VGG (has "features" or "classifier" prefix)
+        is_vgg = 'features' in full_name or 'classifier' in full_name
+        
+        if is_vgg:
+            # VGG structure: features.* comes first, root avgpool comes middle, classifier.* comes last
+            if 'features' in full_name:
+                # Extract number from features.X or features.X.Y
+                parts = full_name.split('.')
+                if len(parts) >= 2 and parts[0] == 'features':
+                    try:
+                        idx = int(parts[1])
+                        return (0, idx)  # features layers come first, ordered by index
+                    except:
+                        return (0, 999)
+            elif 'classifier' in full_name:
+                # Extract number from classifier.X
+                parts = full_name.split('.')
+                if len(parts) >= 2 and parts[0] == 'classifier':
+                    try:
+                        idx = int(parts[1])
+                        return (2000, idx)  # classifier layers come last, ordered by index
+                    except:
+                        return (2000, 999)
+            else:
+                # Root-level layers in VGG (like AdaptiveAvgPool2d) come between features and classifier
+                if 'avgpool' in name or 'adaptive' in name:
+                    return (1000, 0)  # Root avgpool comes after features, before classifier
+                return (1500, full_name)  # Other root VGG layers
+        
+        # ResNet structure
+        # Root layers (no dots) - order by typical ResNet structure
+        if '.' not in layer["name"]:
+            # Initial layers (come first)
+            if 'conv1' in name:
+                return (0, 0)
+            elif 'bn1' in name:
+                return (0, 1)
+            elif 'relu' in name and '1' in name:
+                return (0, 2)
+            elif 'maxpool' in name:
+                return (0, 3)
+            # Final layers (come last)
+            elif 'avgpool' in name or 'adaptive' in name:
+                return (999, 0)
+            elif 'fc' in name or layer_type == "Linear":
+                return (999, 1)
+            else:
+                return (0, 99)  # Other root layers
+        
+        # Layers with module prefix - order by depth and name
+        depth = layer["name"].count('.')
+        # Put FC/Linear layers at the end
+        if "fc" in name or layer_type == "Linear":
+            return (1000, name)
+        return (depth, name)
+    
+    layers.sort(key=get_execution_order)
+    
+    # Build connections and track previous layer
+    for i in range(len(layers)):
+        if i > 0:
+            layers[i]["previous"] = layers[i - 1]["name"]
+        if i < len(layers) - 1:
+            layers[i]["next"] = layers[i + 1]["name"]
     
     return {"layers": layers, "architecture": "sequential"}
 
@@ -168,6 +320,106 @@ async def visualize_activations(
         with torch.no_grad():
             features = feature_extractor(input_tensor)
             activations = features[layer_name].squeeze(0).cpu().numpy()
+        
+        # Get layer info for input shape and previous layer
+        previous_layer = None
+        input_shape = None
+        
+        # Get all layers in execution order
+        all_layers = []
+        for name, module in model.named_modules():
+            if len(list(module.children())) == 0:
+                all_layers.append({"name": name, "module": module})
+        
+        # Sort to get execution order (same logic as in get_model_layers)
+        def get_layer_order(l):
+            name = l["name"].lower()
+            layer_type = type(l["module"]).__name__
+            full_name = l["name"]
+            
+            # Check if this is VGG (has "features" or "classifier" prefix)
+            is_vgg = 'features' in full_name or 'classifier' in full_name
+            
+            if is_vgg:
+                # VGG structure: features.* comes first, root avgpool comes middle, classifier.* comes last
+                if 'features' in full_name:
+                    # Extract number from features.X or features.X.Y
+                    parts = full_name.split('.')
+                    if len(parts) >= 2 and parts[0] == 'features':
+                        try:
+                            idx = int(parts[1])
+                            return (0, idx)  # features layers come first, ordered by index
+                        except:
+                            return (0, 999)
+                elif 'classifier' in full_name:
+                    # Extract number from classifier.X
+                    parts = full_name.split('.')
+                    if len(parts) >= 2 and parts[0] == 'classifier':
+                        try:
+                            idx = int(parts[1])
+                            return (2000, idx)  # classifier layers come last, ordered by index
+                        except:
+                            return (2000, 999)
+                else:
+                    # Root-level layers in VGG (like AdaptiveAvgPool2d) come between features and classifier
+                    if 'avgpool' in name or 'adaptive' in name:
+                        return (1000, 0)  # Root avgpool comes after features, before classifier
+                    return (1500, full_name)  # Other root VGG layers
+            
+            # ResNet structure
+            if '.' not in l["name"]:
+                if 'conv1' in name:
+                    return (0, 0)
+                elif 'bn1' in name:
+                    return (0, 1)
+                elif 'relu' in name and '1' in name:
+                    return (0, 2)
+                elif 'maxpool' in name:
+                    return (0, 3)
+                elif 'avgpool' in name or 'adaptive' in name:
+                    return (999, 0)
+                elif 'fc' in name or layer_type == "Linear":
+                    return (999, 1)
+                else:
+                    return (0, 99)
+            depth = l["name"].count('.')
+            if "fc" in name or layer_type == "Linear":
+                return (1000, l["name"])
+            return (depth, l["name"])
+        
+        all_layers.sort(key=get_layer_order)
+        
+        # Find current layer index
+        current_idx = None
+        for idx, l in enumerate(all_layers):
+            if l["name"] == layer_name:
+                current_idx = idx
+                break
+        
+        # Get previous layer and input shape
+        if current_idx is not None and current_idx > 0:
+            prev_layer_info = all_layers[current_idx - 1]
+            previous_layer = prev_layer_info["name"]
+            prev_module = prev_layer_info["module"]
+            
+            # Estimate input shape based on previous layer's output
+            if hasattr(prev_module, 'out_channels'):
+                # Conv layer output
+                input_shape = f"[batch, {prev_module.out_channels}, H, W]"
+            elif hasattr(prev_module, 'num_features'):
+                # BatchNorm output
+                input_shape = f"[batch, {prev_module.num_features}, H, W]"
+            elif type(prev_module).__name__ == "AdaptiveAvgPool2d":
+                # After adaptive pooling, it's flattened
+                input_shape = "[batch, flattened_features]"
+            elif type(prev_module).__name__ == "MaxPool2d":
+                input_shape = "[batch, channels, H/2, W/2]"
+            else:
+                input_shape = "[batch, channels, H, W]"
+        elif current_idx == 0:
+            # First layer - input is the image
+            input_shape = "[1, 3, 224, 224]"
+            previous_layer = "Input Image"
         
         # Normalize activations for visualization
         if len(activations.shape) == 3:  # Conv layer: [channels, height, width]
@@ -214,15 +466,32 @@ async def visualize_activations(
                 "num_channels": int(num_channels),
                 "min": float(activations.min()),
                 "max": float(activations.max()),
-                "mean": float(activations.mean())
+                "mean": float(activations.mean()),
+                "input_shape": input_shape,
+                "previous_layer": previous_layer
             }
         elif len(activations.shape) == 1:  # Linear layer
+            # Get top activations for visualization
+            top_indices = np.argsort(activations)[-20:][::-1]  # Top 20
+            
+            top_activations = []
+            for idx in top_indices:
+                top_activations.append({
+                    "index": int(idx),
+                    "value": float(activations[idx]),
+                    "label": IMAGENET_LABELS.get(int(idx), f"Class {idx}")
+                })
+            
             return {
                 "shape": list(activations.shape),
                 "activations": activations.tolist(),
+                "top_activations": top_activations,
                 "min": float(activations.min()),
                 "max": float(activations.max()),
-                "mean": float(activations.mean())
+                "mean": float(activations.mean()),
+                "is_linear": True,
+                "input_shape": input_shape,
+                "previous_layer": previous_layer
             }
         else:
             return {

@@ -30,6 +30,30 @@
   font-size: 0.9rem;
 }
 
+.flow-start {
+  border: 2px solid #43e97b;
+  background: rgba(67, 233, 123, 0.1);
+}
+
+.flow-end {
+  border: 2px solid #667eea;
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.flow-direction {
+  color: #43e97b;
+  font-weight: 600;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.flow-note {
+  color: #667eea;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  font-style: italic;
+}
+
 .layer-group {
   margin: 0.5rem 0;
 }
@@ -69,6 +93,46 @@
   margin-left: auto;
 }
 
+.group-info-icon {
+  margin-left: 0.5rem;
+  cursor: help;
+  font-size: 0.9rem;
+}
+
+.root-explanation {
+  background: rgba(102, 126, 234, 0.1);
+  border-left: 3px solid #667eea;
+  padding: 0.75rem;
+  margin: 0.5rem 0 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: #aaa;
+  line-height: 1.6;
+}
+
+.root-overview {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(67, 233, 123, 0.1);
+  border-left: 3px solid #43e97b;
+  border-radius: 4px;
+}
+
+.root-overview h4 {
+  color: #43e97b;
+  margin: 0 0 0.75rem 0;
+  font-size: 0.95rem;
+}
+
+.root-overview pre {
+  color: #e0e0e0;
+  font-size: 0.85rem;
+  line-height: 1.8;
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
 .group-layers {
   margin-top: 0.5rem;
   margin-left: 1rem;
@@ -95,6 +159,23 @@
   background: #1a1a2e;
   border-left-width: 4px;
   box-shadow: 0 0 10px rgba(102, 126, 234, 0.3);
+}
+
+.layer-node.final-layer {
+  border: 2px solid #667eea;
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.final-layer-badge {
+  background: #667eea;
+  color: #000;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  text-align: center;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.5px;
 }
 
 .layer-header {

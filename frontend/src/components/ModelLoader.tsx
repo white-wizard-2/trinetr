@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import axios from 'axios'
 import ModelInfoModal from './ModelInfoModal'
+import WeightStructureModal from './WeightStructureModal'
 import './ModelLoader.css'
 
 interface ModelLoaderProps {
@@ -11,7 +12,9 @@ function ModelLoader({ onModelLoaded }: ModelLoaderProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [modelName, setModelName] = useState('resnet18')
+  const [modelId, setModelId] = useState<string | null>(null)
   const [showInfo, setShowInfo] = useState(false)
+  const [showWeights, setShowWeights] = useState(false)
 
   const loadModel = async () => {
     setLoading(true)
@@ -22,6 +25,7 @@ function ModelLoader({ onModelLoaded }: ModelLoaderProps) {
         params: { model_name: modelName }
       })
       
+      setModelId(response.data.model_id)
       onModelLoaded(response.data.model_id)
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load model')
@@ -35,13 +39,23 @@ function ModelLoader({ onModelLoaded }: ModelLoaderProps) {
       <div className="model-loader">
         <div className="model-loader-header">
           <h3>Load Model</h3>
-          <button 
-            className="info-button"
-            onClick={() => setShowInfo(true)}
-            title="Learn about this model"
-          >
-            📖 Info
-          </button>
+          <div className="header-buttons">
+            <button 
+              className="info-button"
+              onClick={() => setShowInfo(true)}
+              title="Learn about this model"
+            >
+              📖 Info
+            </button>
+            <button 
+              className="weights-button"
+              onClick={() => setShowWeights(true)}
+              disabled={!modelId}
+              title="View weight structure"
+            >
+              ⚖️ Weights
+            </button>
+          </div>
         </div>
         <select 
           value={modelName} 
@@ -62,6 +76,14 @@ function ModelLoader({ onModelLoaded }: ModelLoaderProps) {
         <ModelInfoModal 
           modelName={modelName}
           onClose={() => setShowInfo(false)}
+        />
+      )}
+      
+      {showWeights && (
+        <WeightStructureModal
+          modelId={modelId}
+          modelName={modelName}
+          onClose={() => setShowWeights(false)}
         />
       )}
     </>

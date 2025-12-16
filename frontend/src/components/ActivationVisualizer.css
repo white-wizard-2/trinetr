@@ -42,6 +42,22 @@
   font-weight: 600;
 }
 
+.stat-highlight {
+  background: rgba(67, 233, 123, 0.1);
+  border-left: 3px solid #43e97b;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.stat-highlight .stat-label {
+  color: #43e97b;
+  font-weight: 600;
+}
+
+.stat-highlight .stat-value {
+  color: #43e97b;
+}
+
 .visualization {
   display: flex;
   flex-direction: column;

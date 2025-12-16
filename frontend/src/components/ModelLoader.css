@@ -4,7 +4,7 @@
   border-radius: 0;
   padding: 0;
   width: 100%;
-  max-width: 250px;
+  max-width: 350px;
 }
 
 .model-loader-header {
@@ -12,6 +12,11 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 0.5rem;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .model-loader h3 {
@@ -25,16 +30,42 @@
   border: 1px solid #555;
   border-radius: 4px;
   color: #e0e0e0;
-  padding: 0.25rem 0.5rem;
-  font-size: 0.8rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
+  min-width: 80px;
 }
 
 .info-button:hover {
   background: #444;
   border-color: #667eea;
   color: #667eea;
+}
+
+.weights-button {
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #e0e0e0;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  min-width: 90px;
+}
+
+.weights-button:hover:not(:disabled) {
+  background: #444;
+  border-color: #43e97b;
+  color: #43e97b;
+}
+
+.weights-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .model-loader select {
