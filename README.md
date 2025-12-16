@@ -2,6 +2,8 @@
 
 A browser-based CNN visualization platform for image and video models.
 
+I am trying to make AI generate a visual representation of models. So I can learn from them.
+
 ## Architecture
 
 - **Backend**: Python FastAPI (for ML operations and model inference)

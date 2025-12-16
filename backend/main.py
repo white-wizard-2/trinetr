@@ -1,7 +1,8 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from typing import Optional
+from pydantic import BaseModel
 import uvicorn
 import numpy as np
 from PIL import Image
@@ -38,6 +39,11 @@ app.add_middleware(
 
 # Global model storage
 loaded_models = {}
+
+# Pydantic models for request bodies
+class WeightUpdateRequest(BaseModel):
+    filter_index: int
+    weight_updates: dict
 
 @app.get("/")
 async def root():
@@ -227,6 +233,163 @@ async def visualize_activations(
                 "mean": float(activations.mean())
             }
             
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/models/{model_id}/weights/{layer_name}")
+async def get_layer_weights(model_id: str, layer_name: str):
+    """Get weights for a specific layer"""
+    if model_id not in loaded_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    try:
+        model = loaded_models[model_id]
+        
+        # Get the layer module
+        layer_module = None
+        for name, module in model.named_modules():
+            if name == layer_name:
+                layer_module = module
+                break
+        
+        if layer_module is None:
+            raise HTTPException(status_code=404, detail="Layer not found")
+        
+        # Check if it's a convolutional layer
+        if isinstance(layer_module, nn.Conv2d):
+            weights = layer_module.weight.data.cpu().numpy()
+            bias = layer_module.bias.data.cpu().numpy() if layer_module.bias is not None else None
+            
+            # Get weight info
+            out_channels, in_channels, kernel_h, kernel_w = weights.shape
+            
+            # Normalize weights for visualization (per filter)
+            normalized_weights = []
+            for i in range(min(out_channels, 64)):  # Limit to first 64 filters
+                filter_weights = weights[i]
+                # Normalize across all input channels
+                filter_flat = filter_weights.flatten()
+                min_val = filter_flat.min()
+                max_val = filter_flat.max()
+                range_val = max_val - min_val if max_val != min_val else 1
+                
+                normalized = (filter_weights - min_val) / range_val
+                normalized_uint8 = (normalized * 255).astype(np.uint8)
+                
+                normalized_weights.append({
+                    "filter_index": int(i),
+                    "weights": normalized_uint8.tolist(),
+                    "raw_weights": filter_weights.tolist(),  # Include raw weights
+                    "raw_min": float(min_val),
+                    "raw_max": float(max_val),
+                    "raw_mean": float(filter_flat.mean()),
+                    "raw_std": float(filter_flat.std())
+                })
+            
+            return {
+                "layer_name": layer_name,
+                "layer_type": "Conv2d",
+                "shape": list(weights.shape),
+                "out_channels": int(out_channels),
+                "in_channels": int(in_channels),
+                "kernel_size": [int(kernel_h), int(kernel_w)],
+                "filters": normalized_weights,
+                "bias": bias.tolist() if bias is not None else None,
+                "weight_stats": {
+                    "min": float(weights.min()),
+                    "max": float(weights.max()),
+                    "mean": float(weights.mean()),
+                    "std": float(weights.std())
+                }
+            }
+        elif isinstance(layer_module, nn.Linear):
+            weights = layer_module.weight.data.cpu().numpy()
+            bias = layer_module.bias.data.cpu().numpy() if layer_module.bias is not None else None
+            
+            return {
+                "layer_name": layer_name,
+                "layer_type": "Linear",
+                "shape": list(weights.shape),
+                "in_features": int(weights.shape[1]),
+                "out_features": int(weights.shape[0]),
+                "weights": weights.tolist(),
+                "bias": bias.tolist() if bias is not None else None,
+                "weight_stats": {
+                    "min": float(weights.min()),
+                    "max": float(weights.max()),
+                    "mean": float(weights.mean()),
+                    "std": float(weights.std())
+                }
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Layer type not supported for weight visualization")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/models/{model_id}/weights/{layer_name}/update")
+async def update_layer_weights(
+    model_id: str,
+    layer_name: str,
+    request: WeightUpdateRequest = Body(...)
+):
+    """Update weights for a specific filter in a layer (for tinkering)"""
+    if model_id not in loaded_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    try:
+        model = loaded_models[model_id]
+        
+        # Get the layer module
+        layer_module = None
+        for name, module in model.named_modules():
+            if name == layer_name:
+                layer_module = module
+                break
+        
+        if layer_module is None:
+            raise HTTPException(status_code=404, detail="Layer not found")
+        
+        if isinstance(layer_module, nn.Conv2d):
+            # Get current weights
+            weights = layer_module.weight.data
+            
+            filter_index = request.filter_index
+            weight_updates = request.weight_updates
+            
+            # Update specific filter weights
+            if filter_index >= weights.shape[0]:
+                raise HTTPException(status_code=400, detail="Filter index out of range")
+            
+            # Apply updates (scale, shift, etc.)
+            if "scale" in weight_updates:
+                weights[filter_index] *= weight_updates["scale"]
+            if "shift" in weight_updates:
+                weights[filter_index] += weight_updates["shift"]
+            if "multiply" in weight_updates:
+                weights[filter_index] *= weight_updates["multiply"]
+            
+            # Update the layer
+            layer_module.weight.data = weights
+            
+            new_stats = {
+                "min": float(weights[filter_index].min().item()),
+                "max": float(weights[filter_index].max().item()),
+                "mean": float(weights[filter_index].mean().item())
+            }
+            
+            return {
+                "status": "success",
+                "message": f"Updated filter {filter_index} in layer {layer_name}",
+                "new_stats": new_stats
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Only Conv2d layers support weight updates")
+            
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

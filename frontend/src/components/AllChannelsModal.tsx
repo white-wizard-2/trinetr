@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import axios from 'axios'
 import './AllChannelsModal.css'
 
 interface Channel {
@@ -12,6 +13,7 @@ interface AllChannelsModalProps {
   layerName: string
   numChannels: number
   colormap?: string
+  modelId: string
   onClose: () => void
 }
 
@@ -124,10 +126,42 @@ function ChannelCanvas({ data, colormap = 'grayscale' }: ChannelCanvasProps) {
   return <canvas ref={canvasRef} className="modal-channel-canvas" />
 }
 
-function AllChannelsModal({ channels, layerName, numChannels, colormap = 'grayscale', onClose }: AllChannelsModalProps) {
+interface WeightFilter {
+  filter_index: number
+  weights: number[][][]
+  raw_weights: number[][][]
+  raw_min: number
+  raw_max: number
+  raw_mean: number
+  raw_std: number
+}
+
+interface WeightData {
+  layer_name: string
+  layer_type: string
+  shape: number[]
+  out_channels: number
+  in_channels: number
+  kernel_size: number[]
+  filters: WeightFilter[]
+  weight_stats: {
+    min: number
+    max: number
+    mean: number
+    std: number
+  }
+}
+
+function AllChannelsModal({ channels, layerName, numChannels, colormap = 'grayscale', modelId, onClose }: AllChannelsModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
   const [gridColumns, setGridColumns] = useState(6)
   const [showInfo, setShowInfo] = useState(false)
+  const [showWeights, setShowWeights] = useState(false)
+  const [weights, setWeights] = useState<WeightData | null>(null)
+  const [loadingWeights, setLoadingWeights] = useState(false)
+  const [selectedFilter, setSelectedFilter] = useState<number | null>(null)
+  const [weightScale, setWeightScale] = useState(1.0)
+  const [weightShift, setWeightShift] = useState(0.0)
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -155,6 +189,150 @@ function AllChannelsModal({ channels, layerName, numChannels, colormap = 'graysc
     }
   }, [onClose])
 
+  const loadWeights = async () => {
+    setLoadingWeights(true)
+    try {
+      const response = await axios.get(
+        `http://localhost:8000/models/${modelId}/weights/${layerName}`
+      )
+      setWeights(response.data)
+      setShowWeights(true)
+    } catch (err: any) {
+      console.error('Failed to load weights:', err)
+      alert(err.response?.data?.detail || 'Failed to load weights')
+    } finally {
+      setLoadingWeights(false)
+    }
+  }
+
+  const updateWeights = async (filterIndex: number) => {
+    if (!weights) return
+    
+    try {
+      const requestBody = {
+        filter_index: filterIndex,
+        weight_updates: {
+          scale: weightScale,
+          shift: weightShift
+        }
+      }
+      
+      console.log('Updating weights:', requestBody)
+      
+      const response = await axios.post(
+        `http://localhost:8000/models/${modelId}/weights/${layerName}/update`,
+        requestBody,
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      )
+      
+      console.log('Response:', response.data)
+      
+      // Safely extract response data
+      const data = response.data || {}
+      const message = typeof data.message === 'string' ? data.message : `Updated filter ${filterIndex}!`
+      const newStats = data.new_stats || {}
+      
+      // Build stats string safely
+      let statsStr = ''
+      if (newStats && typeof newStats === 'object') {
+        const min = typeof newStats.min === 'number' ? newStats.min.toFixed(4) : 'N/A'
+        const max = typeof newStats.max === 'number' ? newStats.max.toFixed(4) : 'N/A'
+        const mean = typeof newStats.mean === 'number' ? newStats.mean.toFixed(4) : 'N/A'
+        statsStr = `\n\nNew Statistics:\n  Min: ${min}\n  Max: ${max}\n  Mean: ${mean}`
+      }
+      
+      alert(`${message}${statsStr}\n\nReload the image to see the effect on activations.`)
+      
+      // Reload weights to see updated values
+      loadWeights()
+    } catch (err: any) {
+      console.error('Failed to update weights:', err)
+      console.error('Error response:', err.response)
+      
+      let errorMsg = 'Failed to update weights'
+      
+      if (err.response?.data) {
+        if (typeof err.response.data === 'string') {
+          errorMsg = err.response.data
+        } else if (err.response.data.detail) {
+          errorMsg = err.response.data.detail
+        } else {
+          errorMsg = `Error: ${JSON.stringify(err.response.data)}`
+        }
+      } else if (err.message) {
+        errorMsg = err.message
+      }
+      
+      alert(errorMsg)
+    }
+  }
+
+  const WeightCanvas = ({ weights, inChannels }: { weights: number[][][], inChannels: number }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null)
+
+    useEffect(() => {
+      if (canvasRef.current && weights && weights.length > 0) {
+        const canvas = canvasRef.current
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          // Find dimensions
+          let kernelH = 0
+          let kernelW = 0
+          
+          // Get dimensions from first channel
+          if (weights[0] && Array.isArray(weights[0])) {
+            kernelH = weights[0].length
+            if (weights[0][0] && Array.isArray(weights[0][0])) {
+              kernelW = weights[0][0].length
+            }
+          }
+
+          if (kernelH > 0 && kernelW > 0) {
+            const scale = 15
+            const spacing = 2
+            const totalWidth = (kernelW * scale + spacing) * inChannels - spacing
+            canvas.width = totalWidth
+            canvas.height = kernelH * scale
+
+            ctx.fillStyle = '#000'
+            ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+            // Draw each input channel's weights side by side
+            for (let c = 0; c < inChannels && c < weights.length; c++) {
+              const channelWeights = weights[c]
+              if (!channelWeights) continue
+
+              const offsetX = c * (kernelW * scale + spacing)
+
+              for (let y = 0; y < kernelH && y < channelWeights.length; y++) {
+                const row = channelWeights[y]
+                if (!row) continue
+
+                for (let x = 0; x < kernelW && x < row.length; x++) {
+                  const value = row[x]
+                  const gray = Math.max(0, Math.min(255, Math.round(value)))
+                  ctx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`
+                  ctx.fillRect(
+                    offsetX + x * scale,
+                    y * scale,
+                    scale,
+                    scale
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+    }, [weights, inChannels])
+
+    return <canvas ref={canvasRef} className="weight-canvas" />
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose} ref={modalRef}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -172,6 +350,14 @@ function AllChannelsModal({ channels, layerName, numChannels, colormap = 'graysc
               title="Show/Hide Information"
             >
               {showInfo ? '📖 Hide Info' : '📖 Show Info'}
+            </button>
+            <button 
+              className="modal-weights-button"
+              onClick={loadWeights}
+              disabled={loadingWeights}
+              title="View and Edit Weights"
+            >
+              {loadingWeights ? 'Loading...' : '⚙️ Weights'}
             </button>
             <button className="modal-close" onClick={onClose}>
               ✕
@@ -264,6 +450,111 @@ function AllChannelsModal({ channels, layerName, numChannels, colormap = 'graysc
                   <li>Try different layers to see how features evolve through the network</li>
                 </ul>
               </div>
+            </div>
+          </div>
+        )}
+
+        {showWeights && weights && (
+          <div className="modal-weights-panel">
+            <div className="weights-header">
+              <h3>Layer Weights: {weights.layer_name}</h3>
+              <button className="close-weights" onClick={() => setShowWeights(false)}>✕</button>
+            </div>
+            <div className="weights-info">
+              <div className="weight-stats">
+                <span>Shape: [{weights.shape.join(', ')}]</span>
+                <span>Kernel: {weights.kernel_size.join('×')}</span>
+                <span>Filters: {weights.out_channels}</span>
+                <span>Min: {weights.weight_stats.min.toFixed(4)}</span>
+                <span>Max: {weights.weight_stats.max.toFixed(4)}</span>
+                <span>Mean: {weights.weight_stats.mean.toFixed(4)}</span>
+              </div>
+            </div>
+            
+            {selectedFilter !== null && (
+              <div className="weight-editor">
+                <h4>Edit Filter #{selectedFilter}</h4>
+                <div className="editor-explanation">
+                  <p><strong>Scale:</strong> Multiply all weights by this value (e.g., 2.0 doubles all weights, 0.5 halves them)</p>
+                  <p><strong>Shift:</strong> Add this value to all weights (e.g., +0.1 increases all weights, -0.1 decreases them)</p>
+                  <p><em>Example: Scale=2.0, Shift=0.1 means: new_weight = (old_weight × 2.0) + 0.1</em></p>
+                </div>
+                <div className="editor-controls">
+                  <label>
+                    Scale: 
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      value={weightScale} 
+                      onChange={(e) => setWeightScale(parseFloat(e.target.value) || 1.0)}
+                    />
+                  </label>
+                  <label>
+                    Shift: 
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      value={weightShift} 
+                      onChange={(e) => setWeightShift(parseFloat(e.target.value) || 0.0)}
+                    />
+                  </label>
+                  <button onClick={() => updateWeights(selectedFilter)}>
+                    Apply Changes
+                  </button>
+                  <button onClick={() => {
+                    setWeightScale(1.0)
+                    setWeightShift(0.0)
+                    setSelectedFilter(null)
+                  }}>
+                    Reset
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="weights-grid">
+              {weights.filters.map((filter) => (
+                <div 
+                  key={filter.filter_index} 
+                  className={`weight-filter-item ${selectedFilter === filter.filter_index ? 'selected' : ''}`}
+                  onClick={() => setSelectedFilter(filter.filter_index)}
+                >
+                  <div className="weight-filter-header">
+                    <span>Filter #{filter.filter_index}</span>
+                    <div className="weight-stats-small">
+                      <span title="Mean (μ): Average of all weight values in this filter">μ: {filter.raw_mean.toFixed(3)}</span>
+                      <span title="Standard Deviation (σ): Measure of how spread out the weights are. Higher σ = more variation">σ: {filter.raw_std.toFixed(3)}</span>
+                    </div>
+                  </div>
+                  <WeightCanvas weights={filter.weights} inChannels={weights.in_channels} />
+                  <div className="weight-range">
+                    Range: [{filter.raw_min.toFixed(3)}, {filter.raw_max.toFixed(3)}]
+                  </div>
+                  {filter.raw_weights && (
+                    <details className="weight-values-details">
+                      <summary>View All Weight Values</summary>
+                      <div className="weight-values-grid">
+                        {filter.raw_weights.map((channel, cIdx) => (
+                          <div key={cIdx} className="weight-channel">
+                            <div className="weight-channel-label">Channel {cIdx}:</div>
+                            <div className="weight-values">
+                              {channel.map((row, rIdx) => (
+                                <div key={rIdx} className="weight-row">
+                                  {row.map((val, vIdx) => (
+                                    <span key={vIdx} className="weight-value" title={`Position [${cIdx}, ${rIdx}, ${vIdx}]`}>
+                                      {val.toFixed(4)}
+                                    </span>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}

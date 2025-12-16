@@ -373,6 +373,7 @@ function ActivationVisualizer({
                 layerName={layerName}
                 numChannels={activations.num_channels}
                 colormap={colormap}
+                modelId={modelId}
                 onClose={() => setShowAllChannels(false)}
               />
             )}
