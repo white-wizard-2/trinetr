@@ -27,13 +27,8 @@ function ModelArchitecture({ modelId, selectedLayer, onLayerSelect }: ModelArchi
         const response = await axios.get(`http://localhost:8000/models/${modelId}/layers`)
         setLayers(response.data.layers)
         
-        // Auto-expand first few groups
-        const groups = new Set<string>()
-        response.data.layers.slice(0, 5).forEach((layer: Layer) => {
-          const group = layer.name.split('.')[0]
-          if (group) groups.add(group)
-        })
-        setExpandedGroups(groups)
+        // Start with all groups collapsed
+        setExpandedGroups(new Set())
       } catch (err) {
         console.error('Failed to load layers', err)
       } finally {
@@ -105,18 +100,32 @@ function ModelArchitecture({ modelId, selectedLayer, onLayerSelect }: ModelArchi
     const initialRootLayers: Layer[] = []
     const finalRootLayers: Layer[] = []
     
+    // Check if this is a VGG model
+    const isVGG = layers.some(l => l.name.includes('features') || l.name.includes('classifier'))
+    
     layers.forEach(layer => {
       const group = getLayerGroup(layer.name)
       if (group === 'root') {
         const name = layer.name.toLowerCase()
-        // Check if this is VGG (has features or classifier in other layers)
-        const isVGG = layers.some(l => l.name.includes('features') || l.name.includes('classifier'))
-        // For VGG, root avgpool comes between features and classifier, not at the end
-        const isFinal = (!isVGG && (name.includes('avgpool') || name.includes('adaptive'))) || name.includes('fc') || layer.type === 'Linear'
-        if (isFinal) {
-          finalRootLayers.push(layer)
+        
+        if (isVGG) {
+          // For VGG: root avgpool comes between features and classifier (final), not initial
+          if (name.includes('avgpool') || name.includes('adaptive') || layer.type === 'AdaptiveAvgPool2d') {
+            finalRootLayers.push(layer)
+          } else if (name.includes('fc') || layer.type === 'Linear') {
+            finalRootLayers.push(layer)
+          } else {
+            // Other root layers in VGG (shouldn't happen, but handle it)
+            initialRootLayers.push(layer)
+          }
         } else {
-          initialRootLayers.push(layer)
+          // For ResNet and other models
+          const isFinal = (name.includes('avgpool') || name.includes('adaptive')) || name.includes('fc') || layer.type === 'Linear'
+          if (isFinal) {
+            finalRootLayers.push(layer)
+          } else {
+            initialRootLayers.push(layer)
+          }
         }
       } else {
         if (!grouped[group]) {

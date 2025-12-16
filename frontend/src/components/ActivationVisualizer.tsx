@@ -275,13 +275,13 @@ function ActivationVisualizer({
         <>
           <div className="activation-stats">
             {activations.previous_layer && (
-              <div className="stat stat-highlight">
+              <div className="stat">
                 <span className="stat-label">Previous Layer:</span>
                 <span className="stat-value">{activations.previous_layer}</span>
               </div>
             )}
             {activations.input_shape && (
-              <div className="stat stat-highlight">
+              <div className="stat">
                 <span className="stat-label">Input Shape:</span>
                 <span className="stat-value">{activations.input_shape}</span>
               </div>

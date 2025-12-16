@@ -34,7 +34,7 @@ function App() {
         </div>
         <div className="header-center">
           <h1>Trinetr</h1>
-          <p>CNN Visualization Platform - Learn how CNNs process images</p>
+          <p>Vision AI Visualization Platform - Learn how AI models process images</p>
         </div>
         <div className="header-right">
           <div className="image-upload-section">
@@ -56,7 +56,7 @@ function App() {
             ) : (
               <div className="info-box">
                 <h3>🎓 Get Started</h3>
-                <p>Load a model from the header to begin exploring CNN architectures!</p>
+                <p>Load a model from the header to begin exploring Vision AI architectures!</p>
               </div>
             )}
           </div>

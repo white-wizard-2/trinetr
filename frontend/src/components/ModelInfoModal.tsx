@@ -186,7 +186,7 @@ function ModelInfoModal({ modelName, onClose }: ModelInfoModalProps) {
           fullName: 'Visual Geometry Group (16 layers)',
           year: 2014,
           authors: 'Karen Simonyan, Andrew Zisserman',
-          description: 'VGG-16 is a classic CNN architecture known for its simplicity - using only 3×3 convolutions and 2×2 max pooling throughout. It demonstrated that depth is crucial for performance.',
+          description: 'VGG-16 is a classic Vision AI architecture known for its simplicity - using only 3×3 convolutions and 2×2 max pooling throughout. It demonstrated that depth is crucial for performance.',
           architecture: {
             input: '224×224×3 RGB image',
             layers: [

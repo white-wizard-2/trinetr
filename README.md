@@ -1,6 +1,6 @@
-# Trinetr - CNN Visualization Platform
+# Trinetr - Vision AI Visualization Platform
 
-A browser-based CNN visualization platform for image and video models.
+A browser-based Vision AI visualization platform for image and video models.
 
 I am trying to make AI generate a visual representation of models. So I can learn from them.
 
@@ -29,7 +29,7 @@ npm run dev
 
 ## Features
 
-- Upload and visualize CNN models
+- Upload and visualize Vision AI models
 - Image and video model support
 - Layer activation visualization
 - Feature map visualization

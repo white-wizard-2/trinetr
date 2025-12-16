@@ -13,7 +13,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from torchvision.models.feature_extraction import create_feature_extractor
 
-app = FastAPI(title="Trinetr CNN Visualization API")
+app = FastAPI(title="Trinetr Vision AI Visualization API")
 
 # Load ImageNet labels
 IMAGENET_LABELS = None
@@ -47,7 +47,7 @@ class WeightUpdateRequest(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"message": "Trinetr CNN Visualization API"}
+    return {"message": "Trinetr Vision AI Visualization API"}
 
 @app.get("/health")
 async def health():
@@ -55,7 +55,7 @@ async def health():
 
 @app.post("/models/load")
 async def load_model(model_name: str = "resnet18"):
-    """Load a pre-trained CNN model"""
+    """Load a pre-trained Vision AI model"""
     try:
         if model_name == "resnet18":
             model = models.resnet18(pretrained=True)
@@ -214,6 +214,9 @@ async def get_model_layers(model_id: str):
             layers.append(layer_info)
             layer_map[name] = layer_info
     
+    # Detect if this is a VGG model by checking if any layer has 'features' or 'classifier'
+    is_vgg_model = any('features' in l["name"] or 'classifier' in l["name"] for l in layers)
+    
     # Sort layers by execution order
     # Define execution order for root layers (no prefix)
     def get_execution_order(layer):
@@ -221,10 +224,7 @@ async def get_model_layers(model_id: str):
         layer_type = layer["type"]
         full_name = layer["name"]
         
-        # Check if this is VGG (has "features" or "classifier" prefix)
-        is_vgg = 'features' in full_name or 'classifier' in full_name
-        
-        if is_vgg:
+        if is_vgg_model:
             # VGG structure: features.* comes first, root avgpool comes middle, classifier.* comes last
             if 'features' in full_name:
                 # Extract number from features.X or features.X.Y
@@ -246,11 +246,11 @@ async def get_model_layers(model_id: str):
                         return (2000, 999)
             else:
                 # Root-level layers in VGG (like AdaptiveAvgPool2d) come between features and classifier
-                if 'avgpool' in name or 'adaptive' in name:
+                if 'avgpool' in name or 'adaptive' in name or layer_type == "AdaptiveAvgPool2d":
                     return (1000, 0)  # Root avgpool comes after features, before classifier
                 return (1500, full_name)  # Other root VGG layers
         
-        # ResNet structure
+        # ResNet structure (or other non-VGG models)
         # Root layers (no dots) - order by typical ResNet structure
         if '.' not in layer["name"]:
             # Initial layers (come first)
@@ -331,16 +331,16 @@ async def visualize_activations(
             if len(list(module.children())) == 0:
                 all_layers.append({"name": name, "module": module})
         
+        # Detect if this is a VGG model
+        is_vgg_model = any('features' in l["name"] or 'classifier' in l["name"] for l in all_layers)
+        
         # Sort to get execution order (same logic as in get_model_layers)
         def get_layer_order(l):
             name = l["name"].lower()
             layer_type = type(l["module"]).__name__
             full_name = l["name"]
             
-            # Check if this is VGG (has "features" or "classifier" prefix)
-            is_vgg = 'features' in full_name or 'classifier' in full_name
-            
-            if is_vgg:
+            if is_vgg_model:
                 # VGG structure: features.* comes first, root avgpool comes middle, classifier.* comes last
                 if 'features' in full_name:
                     # Extract number from features.X or features.X.Y
@@ -362,11 +362,11 @@ async def visualize_activations(
                             return (2000, 999)
                 else:
                     # Root-level layers in VGG (like AdaptiveAvgPool2d) come between features and classifier
-                    if 'avgpool' in name or 'adaptive' in name:
+                    if 'avgpool' in name or 'adaptive' in name or layer_type == "AdaptiveAvgPool2d":
                         return (1000, 0)  # Root avgpool comes after features, before classifier
                     return (1500, full_name)  # Other root VGG layers
             
-            # ResNet structure
+            # ResNet structure (or other non-VGG models)
             if '.' not in l["name"]:
                 if 'conv1' in name:
                     return (0, 0)
@@ -396,29 +396,40 @@ async def visualize_activations(
                 current_idx = idx
                 break
         
-        # Get previous layer and input shape
+        # Get previous layer and compute actual input shape
         if current_idx is not None and current_idx > 0:
             prev_layer_info = all_layers[current_idx - 1]
             previous_layer = prev_layer_info["name"]
             prev_module = prev_layer_info["module"]
             
-            # Estimate input shape based on previous layer's output
-            if hasattr(prev_module, 'out_channels'):
-                # Conv layer output
-                input_shape = f"[batch, {prev_module.out_channels}, H, W]"
-            elif hasattr(prev_module, 'num_features'):
-                # BatchNorm output
-                input_shape = f"[batch, {prev_module.num_features}, H, W]"
-            elif type(prev_module).__name__ == "AdaptiveAvgPool2d":
-                # After adaptive pooling, it's flattened
-                input_shape = "[batch, flattened_features]"
-            elif type(prev_module).__name__ == "MaxPool2d":
-                input_shape = "[batch, channels, H/2, W/2]"
-            else:
-                input_shape = "[batch, channels, H, W]"
+            # Get actual input shape by running forward pass to previous layer
+            try:
+                # Create feature extractor for previous layer
+                prev_feature_extractor = create_feature_extractor(model, return_nodes=[previous_layer])
+                with torch.no_grad():
+                    prev_features = prev_feature_extractor(input_tensor)
+                    prev_output = prev_features[previous_layer]
+                    if isinstance(prev_output, torch.Tensor):
+                        actual_shape = list(prev_output.shape)
+                        # Format as string with actual values
+                        input_shape = f"[{', '.join(map(str, actual_shape))}]"
+                    else:
+                        input_shape = f"[{list(prev_output.shape)}]"
+            except Exception as e:
+                # Fallback to estimation if forward pass fails
+                if hasattr(prev_module, 'out_channels'):
+                    input_shape = f"[batch, {prev_module.out_channels}, H, W]"
+                elif hasattr(prev_module, 'num_features'):
+                    input_shape = f"[batch, {prev_module.num_features}, H, W]"
+                elif type(prev_module).__name__ == "AdaptiveAvgPool2d":
+                    input_shape = "[batch, flattened_features]"
+                elif type(prev_module).__name__ == "MaxPool2d":
+                    input_shape = "[batch, channels, H/2, W/2]"
+                else:
+                    input_shape = "[batch, channels, H, W]"
         elif current_idx == 0:
             # First layer - input is the image
-            input_shape = "[1, 3, 224, 224]"
+            input_shape = f"[{', '.join(map(str, list(input_tensor.shape)))}]"
             previous_layer = "Input Image"
         
         # Normalize activations for visualization
