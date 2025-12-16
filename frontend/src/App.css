@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap');
+
 .app {
   min-height: 100vh;
   display: flex;
@@ -23,8 +25,6 @@
 .header-center {
   text-align: center;
 }
-
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap');
 
 .header-center h1 {
   font-family: 'Orbitron', 'Rajdhani', 'Courier New', monospace;

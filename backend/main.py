@@ -214,70 +214,146 @@ async def get_model_layers(model_id: str):
             layers.append(layer_info)
             layer_map[name] = layer_info
     
-    # Detect if this is a VGG model by checking if any layer has 'features' or 'classifier'
-    is_vgg_model = any('features' in l["name"] or 'classifier' in l["name"] for l in layers)
-    
-    # Sort layers by execution order
-    # Define execution order for root layers (no prefix)
-    def get_execution_order(layer):
-        name = layer["name"].lower()
-        layer_type = layer["type"]
-        full_name = layer["name"]
+    # Determine actual execution order by tracing the model
+    # Create a dummy input and trace which layers execute in order
+    try:
+        dummy_input = torch.randn(1, 3, 224, 224)
+        execution_order = {}
+        execution_index = [0]  # Use list to allow modification in nested function
         
-        if is_vgg_model:
-            # VGG structure: features.* comes first, root avgpool comes middle, classifier.* comes last
-            if 'features' in full_name:
-                # Extract number from features.X or features.X.Y
-                parts = full_name.split('.')
-                if len(parts) >= 2 and parts[0] == 'features':
-                    try:
-                        idx = int(parts[1])
-                        return (0, idx)  # features layers come first, ordered by index
-                    except:
-                        return (0, 999)
-            elif 'classifier' in full_name:
-                # Extract number from classifier.X
-                parts = full_name.split('.')
-                if len(parts) >= 2 and parts[0] == 'classifier':
-                    try:
-                        idx = int(parts[1])
-                        return (2000, idx)  # classifier layers come last, ordered by index
-                    except:
-                        return (2000, 999)
+        # Hook to capture layer execution order
+        def make_hook(name):
+            def hook(module, input, output):
+                if name not in execution_order:
+                    execution_order[name] = execution_index[0]
+                    execution_index[0] += 1
+            return hook
+        
+        # Register hooks on all leaf modules
+        hooks = []
+        for name, module in model.named_modules():
+            if len(list(module.children())) == 0:
+                hook = module.register_forward_hook(make_hook(name))
+                hooks.append(hook)
+        
+        # Run forward pass to capture execution order
+        with torch.no_grad():
+            _ = model(dummy_input)
+        
+        # Remove hooks
+        for hook in hooks:
+            hook.remove()
+        
+        # Sort layers by their actual execution order
+        def get_execution_order(layer):
+            name = layer["name"]
+            # Use actual execution order if available, otherwise fallback to name-based ordering
+            if name in execution_order:
+                return (execution_order[name], name)
             else:
-                # Root-level layers in VGG (like AdaptiveAvgPool2d) come between features and classifier
-                if 'avgpool' in name or 'adaptive' in name or layer_type == "AdaptiveAvgPool2d":
-                    return (1000, 0)  # Root avgpool comes after features, before classifier
-                return (1500, full_name)  # Other root VGG layers
+                # Fallback: use name-based ordering
+                name_lower = name.lower()
+                layer_type = layer["type"]
+                depth = name.count('.')
+                
+                # Check if VGG
+                is_vgg = any('features' in l["name"] or 'classifier' in l["name"] for l in layers)
+                
+                if is_vgg:
+                    if 'features' in name:
+                        parts = name.split('.')
+                        if len(parts) >= 2 and parts[0] == 'features':
+                            try:
+                                return (int(parts[1]), name)
+                            except:
+                                return (9999, name)
+                    elif 'classifier' in name:
+                        parts = name.split('.')
+                        if len(parts) >= 2 and parts[0] == 'classifier':
+                            try:
+                                return (10000 + int(parts[1]), name)
+                            except:
+                                return (19999, name)
+                    else:
+                        if 'avgpool' in name_lower or 'adaptive' in name_lower:
+                            return (5000, name)
+                        return (9999, name)
+                
+                # ResNet fallback
+                if '.' not in name:
+                    if 'conv1' in name_lower:
+                        return (0, name)
+                    elif 'bn1' in name_lower:
+                        return (1, name)
+                    elif 'relu' in name_lower and '1' in name:
+                        return (2, name)
+                    elif 'maxpool' in name_lower:
+                        return (3, name)
+                    elif 'avgpool' in name_lower or 'adaptive' in name_lower:
+                        return (9998, name)
+                    elif 'fc' in name_lower or layer_type == "Linear":
+                        return (9999, name)
+                
+                if "fc" in name_lower or layer_type == "Linear":
+                    return (10000, name)
+                return (depth * 1000, name)
         
-        # ResNet structure (or other non-VGG models)
-        # Root layers (no dots) - order by typical ResNet structure
-        if '.' not in layer["name"]:
-            # Initial layers (come first)
-            if 'conv1' in name:
-                return (0, 0)
-            elif 'bn1' in name:
-                return (0, 1)
-            elif 'relu' in name and '1' in name:
-                return (0, 2)
-            elif 'maxpool' in name:
-                return (0, 3)
-            # Final layers (come last)
-            elif 'avgpool' in name or 'adaptive' in name:
-                return (999, 0)
-            elif 'fc' in name or layer_type == "Linear":
-                return (999, 1)
-            else:
-                return (0, 99)  # Other root layers
+        layers.sort(key=get_execution_order)
         
-        # Layers with module prefix - order by depth and name
-        depth = layer["name"].count('.')
-        # Put FC/Linear layers at the end
-        if "fc" in name or layer_type == "Linear":
-            return (1000, name)
-        return (depth, name)
-    
-    layers.sort(key=get_execution_order)
+    except Exception as e:
+        # Fallback to name-based ordering if tracing fails
+        print(f"Warning: Could not trace execution order: {e}")
+        is_vgg_model = any('features' in l["name"] or 'classifier' in l["name"] for l in layers)
+        
+        def get_execution_order(layer):
+            name = layer["name"].lower()
+            layer_type = layer["type"]
+            full_name = layer["name"]
+            
+            if is_vgg_model:
+                if 'features' in full_name:
+                    parts = full_name.split('.')
+                    if len(parts) >= 2 and parts[0] == 'features':
+                        try:
+                            idx = int(parts[1])
+                            return (0, idx)
+                        except:
+                            return (0, 999)
+                elif 'classifier' in full_name:
+                    parts = full_name.split('.')
+                    if len(parts) >= 2 and parts[0] == 'classifier':
+                        try:
+                            idx = int(parts[1])
+                            return (2000, idx)
+                        except:
+                            return (2000, 999)
+                else:
+                    if 'avgpool' in name or 'adaptive' in name or layer_type == "AdaptiveAvgPool2d":
+                        return (1000, 0)
+                    return (1500, full_name)
+            
+            if '.' not in layer["name"]:
+                if 'conv1' in name:
+                    return (0, 0)
+                elif 'bn1' in name:
+                    return (0, 1)
+                elif 'relu' in name and '1' in name:
+                    return (0, 2)
+                elif 'maxpool' in name:
+                    return (0, 3)
+                elif 'avgpool' in name or 'adaptive' in name:
+                    return (999, 0)
+                elif 'fc' in name or layer_type == "Linear":
+                    return (999, 1)
+                else:
+                    return (0, 99)
+            
+            depth = layer["name"].count('.')
+            if "fc" in name or layer_type == "Linear":
+                return (1000, name)
+            return (depth, name)
+        
+        layers.sort(key=get_execution_order)
     
     # Build connections and track previous layer
     for i in range(len(layers)):
@@ -325,67 +401,85 @@ async def visualize_activations(
         previous_layer = None
         input_shape = None
         
-        # Get all layers in execution order
+        # Get all layers and determine actual execution order by tracing
         all_layers = []
         for name, module in model.named_modules():
             if len(list(module.children())) == 0:
                 all_layers.append({"name": name, "module": module})
         
-        # Detect if this is a VGG model
-        is_vgg_model = any('features' in l["name"] or 'classifier' in l["name"] for l in all_layers)
+        # Trace actual execution order using forward hooks
+        execution_order = {}
+        execution_index = [0]  # Use list to allow modification in nested function
         
-        # Sort to get execution order (same logic as in get_model_layers)
+        def make_hook(name):
+            def hook(module, input, output):
+                if name not in execution_order:
+                    execution_order[name] = execution_index[0]
+                    execution_index[0] += 1
+            return hook
+        
+        hooks = []
+        for l in all_layers:
+            hook = l["module"].register_forward_hook(make_hook(l["name"]))
+            hooks.append(hook)
+        
+        # Run forward pass to capture execution order
+        with torch.no_grad():
+            _ = model(input_tensor)
+        
+        # Remove hooks
+        for hook in hooks:
+            hook.remove()
+        
+        # Sort by actual execution order
         def get_layer_order(l):
-            name = l["name"].lower()
-            layer_type = type(l["module"]).__name__
-            full_name = l["name"]
-            
-            if is_vgg_model:
-                # VGG structure: features.* comes first, root avgpool comes middle, classifier.* comes last
-                if 'features' in full_name:
-                    # Extract number from features.X or features.X.Y
-                    parts = full_name.split('.')
-                    if len(parts) >= 2 and parts[0] == 'features':
-                        try:
-                            idx = int(parts[1])
-                            return (0, idx)  # features layers come first, ordered by index
-                        except:
-                            return (0, 999)
-                elif 'classifier' in full_name:
-                    # Extract number from classifier.X
-                    parts = full_name.split('.')
-                    if len(parts) >= 2 and parts[0] == 'classifier':
-                        try:
-                            idx = int(parts[1])
-                            return (2000, idx)  # classifier layers come last, ordered by index
-                        except:
-                            return (2000, 999)
-                else:
-                    # Root-level layers in VGG (like AdaptiveAvgPool2d) come between features and classifier
-                    if 'avgpool' in name or 'adaptive' in name or layer_type == "AdaptiveAvgPool2d":
-                        return (1000, 0)  # Root avgpool comes after features, before classifier
-                    return (1500, full_name)  # Other root VGG layers
-            
-            # ResNet structure (or other non-VGG models)
-            if '.' not in l["name"]:
-                if 'conv1' in name:
-                    return (0, 0)
-                elif 'bn1' in name:
-                    return (0, 1)
-                elif 'relu' in name and '1' in name:
-                    return (0, 2)
-                elif 'maxpool' in name:
-                    return (0, 3)
-                elif 'avgpool' in name or 'adaptive' in name:
-                    return (999, 0)
-                elif 'fc' in name or layer_type == "Linear":
-                    return (999, 1)
-                else:
-                    return (0, 99)
-            depth = l["name"].count('.')
-            if "fc" in name or layer_type == "Linear":
-                return (1000, l["name"])
-            return (depth, l["name"])
+            name = l["name"]
+            if name in execution_order:
+                return (execution_order[name], name)
+            else:
+                # Fallback ordering
+                name_lower = name.lower()
+                layer_type = type(l["module"]).__name__
+                is_vgg = any('features' in ll["name"] or 'classifier' in ll["name"] for ll in all_layers)
+                
+                if is_vgg:
+                    if 'features' in name:
+                        parts = name.split('.')
+                        if len(parts) >= 2 and parts[0] == 'features':
+                            try:
+                                return (int(parts[1]), name)
+                            except:
+                                return (9999, name)
+                    elif 'classifier' in name:
+                        parts = name.split('.')
+                        if len(parts) >= 2 and parts[0] == 'classifier':
+                            try:
+                                return (10000 + int(parts[1]), name)
+                            except:
+                                return (19999, name)
+                    else:
+                        if 'avgpool' in name_lower or 'adaptive' in name_lower:
+                            return (5000, name)
+                        return (9999, name)
+                
+                if '.' not in name:
+                    if 'conv1' in name_lower:
+                        return (0, name)
+                    elif 'bn1' in name_lower:
+                        return (1, name)
+                    elif 'relu' in name_lower and '1' in name:
+                        return (2, name)
+                    elif 'maxpool' in name_lower:
+                        return (3, name)
+                    elif 'avgpool' in name_lower or 'adaptive' in name_lower:
+                        return (9998, name)
+                    elif 'fc' in name_lower or layer_type == "Linear":
+                        return (9999, name)
+                
+                depth = name.count('.')
+                if "fc" in name_lower or layer_type == "Linear":
+                    return (10000, name)
+                return (depth * 1000, name)
         
         all_layers.sort(key=get_layer_order)
         

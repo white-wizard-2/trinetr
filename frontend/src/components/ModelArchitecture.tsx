@@ -154,13 +154,43 @@ function ModelArchitecture({ modelId, selectedLayer, onLayerSelect }: ModelArchi
     
     // Sort groups by execution order
     const sortedGroupEntries = Object.entries(grouped).sort(([nameA], [nameB]) => {
-      // root_initial should come first
-      if (nameA === 'root_initial') return -1
-      if (nameB === 'root_initial') return 1
-      
-      // root_final should come last
-      if (nameA === 'root_final') return 1
-      if (nameB === 'root_final') return -1
+      if (isVGG) {
+        // VGG specific ordering: root_initial -> features -> root_final -> classifier
+        if (nameA === 'root_initial') return -1
+        if (nameB === 'root_initial') return 1
+        
+        if (nameA === 'features') {
+          if (nameB === 'root_initial') return 1
+          if (nameB === 'root_final' || nameB === 'classifier') return -1
+        }
+        if (nameB === 'features') {
+          if (nameA === 'root_initial') return -1
+          if (nameA === 'root_final' || nameA === 'classifier') return 1
+        }
+        
+        if (nameA === 'root_final') {
+          if (nameB === 'features' || nameB === 'root_initial') return 1
+          if (nameB === 'classifier') return -1
+        }
+        if (nameB === 'root_final') {
+          if (nameA === 'features' || nameA === 'root_initial') return -1
+          if (nameA === 'classifier') return 1
+        }
+        
+        if (nameA === 'classifier') {
+          if (nameB === 'root_final' || nameB === 'features' || nameB === 'root_initial') return 1
+        }
+        if (nameB === 'classifier') {
+          if (nameA === 'root_final' || nameA === 'features' || nameA === 'root_initial') return -1
+        }
+      } else {
+        // ResNet and other models: root_initial -> layer groups -> root_final
+        if (nameA === 'root_initial') return -1
+        if (nameB === 'root_initial') return 1
+        
+        if (nameA === 'root_final') return 1
+        if (nameB === 'root_final') return -1
+      }
       
       // For other groups (layer1, layer2, etc.), sort by finding the first layer in each group
       const firstLayerA = grouped[nameA]?.[0]
