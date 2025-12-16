@@ -1,0 +1,152 @@
+.model-architecture {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 1.5rem;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.model-architecture h2 {
+  margin-bottom: 1rem;
+  color: #667eea;
+  font-size: 1.2rem;
+}
+
+.architecture-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.flow-info {
+  padding: 0.75rem;
+  background: #0a0a0a;
+  border-radius: 4px;
+  text-align: center;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.layer-group {
+  margin: 0.5rem 0;
+}
+
+.group-header {
+  padding: 0.75rem;
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+}
+
+.group-header:hover {
+  background: #1f1f1f;
+  border-color: #667eea;
+}
+
+.group-toggle {
+  color: #667eea;
+  font-weight: bold;
+  width: 20px;
+}
+
+.group-name {
+  font-weight: 600;
+  color: #e0e0e0;
+  text-transform: capitalize;
+}
+
+.group-count {
+  color: #888;
+  font-size: 0.9rem;
+  margin-left: auto;
+}
+
+.group-layers {
+  margin-top: 0.5rem;
+  margin-left: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.layer-node {
+  padding: 0.75rem;
+  background: #0a0a0a;
+  border-left: 3px solid;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.layer-node:hover {
+  background: #1f1f1f;
+  transform: translateX(4px);
+}
+
+.layer-node.selected {
+  background: #1a1a2e;
+  border-left-width: 4px;
+  box-shadow: 0 0 10px rgba(102, 126, 234, 0.3);
+}
+
+.layer-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.layer-icon {
+  font-size: 1.2rem;
+}
+
+.layer-name {
+  font-weight: 500;
+  color: #e0e0e0;
+  flex: 1;
+}
+
+.layer-type {
+  color: #888;
+  font-size: 0.8rem;
+  font-family: 'Courier New', monospace;
+}
+
+.layer-description {
+  color: #aaa;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #333;
+  font-style: italic;
+}
+
+.layer-arrow {
+  text-align: center;
+  color: #667eea;
+  font-size: 1.2rem;
+  margin: 0.25rem 0;
+}
+
+.flow-connector {
+  text-align: center;
+  color: #667eea;
+  font-size: 1.5rem;
+  margin: 0.5rem 0;
+  font-weight: bold;
+}
+
+.loading {
+  padding: 2rem;
+  text-align: center;
+  color: #888;
+}
+
