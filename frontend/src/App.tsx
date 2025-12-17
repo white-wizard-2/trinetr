@@ -29,18 +29,14 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="header-left">
-          <ModelLoader onModelLoaded={setModelId} />
-        </div>
-        <div className="header-center">
+        <div className="header-brand">
           <h1>Trinetr</h1>
-          <p>Vision AI Visualization Platform - Learn how AI models process images</p>
+          <span className="tagline">Vision AI Visualization</span>
         </div>
-        <div className="header-right">
-          <div className="image-upload-section">
-            <h3>Upload Image</h3>
-            <ImageUploader onImageUpload={setImageFile} imageFile={imageFile} />
-          </div>
+        <div className="header-controls">
+          <ModelLoader onModelLoaded={setModelId} />
+          <div className="header-divider" />
+          <ImageUploader onImageUpload={setImageFile} imageFile={imageFile} />
         </div>
       </header>
       

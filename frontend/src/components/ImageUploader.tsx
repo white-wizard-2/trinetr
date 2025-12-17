@@ -27,14 +27,6 @@ function ImageUploader({ onImageUpload, imageFile }: ImageUploaderProps) {
       <div {...getRootProps()} className={`dropzone ${isDragActive ? 'active' : ''}`}>
         <input {...getInputProps()} />
         <div className="dropzone-content">
-          {isDragActive ? (
-            <p>Drop the image here...</p>
-          ) : (
-            <div className="dropzone-text">
-              <p>Drag & drop an image here, or click to select</p>
-              <p className="hint">Supports: PNG, JPG, JPEG, GIF, WEBP</p>
-            </div>
-          )}
           {imageFile && (
             <div className="dropzone-preview">
               <img 
@@ -44,6 +36,9 @@ function ImageUploader({ onImageUpload, imageFile }: ImageUploaderProps) {
               />
             </div>
           )}
+          <div className="dropzone-text">
+            <p>{isDragActive ? 'Drop here...' : (imageFile ? imageFile.name.slice(0, 15) + (imageFile.name.length > 15 ? '...' : '') : 'Drop image or click')}</p>
+          </div>
         </div>
       </div>
     </div>

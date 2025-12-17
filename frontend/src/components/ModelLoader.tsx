@@ -37,26 +37,6 @@ function ModelLoader({ onModelLoaded }: ModelLoaderProps) {
   return (
     <>
       <div className="model-loader">
-        <div className="model-loader-header">
-          <h3>Load Model</h3>
-          <div className="header-buttons">
-            <button 
-              className="info-button"
-              onClick={() => setShowInfo(true)}
-              title="Learn about this model"
-            >
-              📖 Info
-            </button>
-            <button 
-              className="weights-button"
-              onClick={() => setShowWeights(true)}
-              disabled={!modelId}
-              title="View weight structure"
-            >
-              ⚖️ Weights
-            </button>
-          </div>
-        </div>
         <select 
           value={modelName} 
           onChange={(e) => setModelName(e.target.value)}
@@ -67,8 +47,25 @@ function ModelLoader({ onModelLoaded }: ModelLoaderProps) {
           <option value="vgg16">VGG-16</option>
         </select>
         <button onClick={loadModel} disabled={loading}>
-          {loading ? 'Loading...' : 'Load Model'}
+          {loading ? '...' : 'Load'}
         </button>
+        <div className="header-buttons">
+          <button 
+            className="info-button"
+            onClick={() => setShowInfo(true)}
+            title="Learn about this model"
+          >
+            📖
+          </button>
+          <button 
+            className="weights-button"
+            onClick={() => setShowWeights(true)}
+            disabled={!modelId}
+            title="View weight structure"
+          >
+            ⚖️
+          </button>
+        </div>
         {error && <div className="error">{error}</div>}
       </div>
       
