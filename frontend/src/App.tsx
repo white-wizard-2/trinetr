@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import ModelLoader from './components/ModelLoader'
 import ImageUploader from './components/ImageUploader'
 import ModelArchitecture from './components/ModelArchitecture'
+import PreprocessingVisualizer from './components/PreprocessingVisualizer'
 import ActivationVisualizer from './components/ActivationVisualizer'
 import PredictionViewer from './components/PredictionViewer'
 import './App.css'
@@ -59,6 +60,10 @@ function App() {
           
           <div className="visualization-panel">
             <div className="panel-tabs">
+              <div className="tab-content">
+                <PreprocessingVisualizer imageFile={imageFile} />
+              </div>
+              
               <div className="tab-content">
                 {imageFile && selectedLayer && modelId ? (
                   <ActivationVisualizer

@@ -7,11 +7,22 @@ import uvicorn
 import numpy as np
 from PIL import Image
 import io
+import base64
 import torch
 import torch.nn as nn
 import torchvision.models as models
 import torchvision.transforms as transforms
 from torchvision.models.feature_extraction import create_feature_extractor
+
+# Interpolation methods mapping
+INTERPOLATION_METHODS = {
+    'nearest': Image.Resampling.NEAREST,
+    'bilinear': Image.Resampling.BILINEAR,
+    'bicubic': Image.Resampling.BICUBIC,
+    'lanczos': Image.Resampling.LANCZOS,
+    'box': Image.Resampling.BOX,
+    'hamming': Image.Resampling.HAMMING,
+}
 
 app = FastAPI(title="Trinetr Vision AI Visualization API")
 
@@ -52,6 +63,72 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
+
+@app.post("/preprocess/visualize")
+async def visualize_preprocessing(
+    file: UploadFile = File(...),
+    target_size: int = 224,
+    interpolation: str = "bilinear"
+):
+    """Visualize how an image is preprocessed (resized) for model input"""
+    try:
+        # Read and open original image
+        contents = await file.read()
+        original_image = Image.open(io.BytesIO(contents)).convert('RGB')
+        original_size = original_image.size
+        
+        # Get interpolation method
+        if interpolation not in INTERPOLATION_METHODS:
+            raise HTTPException(status_code=400, detail=f"Unknown interpolation: {interpolation}")
+        
+        interp_method = INTERPOLATION_METHODS[interpolation]
+        
+        # Resize image
+        resized_image = original_image.resize((target_size, target_size), interp_method)
+        
+        # Convert resized image to base64 for frontend display
+        buffer = io.BytesIO()
+        resized_image.save(buffer, format='PNG')
+        resized_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        
+        # Calculate scaling info
+        scale_x = target_size / original_size[0]
+        scale_y = target_size / original_size[1]
+        
+        # Compute pixel-level statistics
+        original_array = np.array(original_image)
+        resized_array = np.array(resized_image)
+        
+        return {
+            "original_size": list(original_size),
+            "target_size": [target_size, target_size],
+            "scale_factor": [round(scale_x, 4), round(scale_y, 4)],
+            "interpolation": interpolation,
+            "resized_image": f"data:image/png;base64,{resized_base64}",
+            "original_stats": {
+                "mean": [float(original_array[:,:,i].mean()) for i in range(3)],
+                "std": [float(original_array[:,:,i].std()) for i in range(3)],
+                "min": [int(original_array[:,:,i].min()) for i in range(3)],
+                "max": [int(original_array[:,:,i].max()) for i in range(3)],
+            },
+            "resized_stats": {
+                "mean": [float(resized_array[:,:,i].mean()) for i in range(3)],
+                "std": [float(resized_array[:,:,i].std()) for i in range(3)],
+                "min": [int(resized_array[:,:,i].min()) for i in range(3)],
+                "max": [int(resized_array[:,:,i].max()) for i in range(3)],
+            },
+            "available_interpolations": list(INTERPOLATION_METHODS.keys()),
+            "interpolation_info": {
+                "nearest": "Fastest, pixelated results. Each output pixel takes value from nearest input pixel.",
+                "bilinear": "Smooth results using linear interpolation. Considers 4 nearest pixels.",
+                "bicubic": "Smoother than bilinear, uses 16 nearest pixels. Good for photos.",
+                "lanczos": "Highest quality, uses sinc function. Best for downscaling photos.",
+                "box": "Simple averaging of pixels. Good for downscaling.",
+                "hamming": "Similar to bilinear but with different weights. Less blurry edges.",
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/models/load")
 async def load_model(model_name: str = "resnet18"):
