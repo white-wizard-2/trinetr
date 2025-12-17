@@ -1,0 +1,127 @@
+.transformer-loader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.transformer-type-toggle {
+  display: flex;
+  background: #0d0d0d;
+  border-radius: 4px;
+  padding: 0.15rem;
+  border: 1px solid #333;
+}
+
+.toggle-btn {
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: #666;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+  color: #888;
+}
+
+.toggle-btn.active {
+  background: #333;
+  color: #43e97b;
+}
+
+.transformer-loader select {
+  padding: 0.4rem 0.5rem;
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 0.8rem;
+  min-width: 120px;
+}
+
+.transformer-loader select:focus {
+  outline: none;
+  border-color: #43e97b;
+}
+
+.transformer-loader .load-btn {
+  padding: 0.4rem 0.75rem;
+  background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+  border: none;
+  border-radius: 4px;
+  color: #000;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.transformer-loader .load-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.transformer-loader .load-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.transformer-loader .info-btn {
+  background: #252525;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  color: #aaa;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.transformer-loader .info-btn:hover {
+  background: #333;
+  border-color: #43e97b;
+}
+
+.error-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: #4a1a1a;
+  border: 1px solid #8a2a2a;
+  border-radius: 4px;
+  color: #ff6b6b;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  z-index: 100;
+}
+
+.model-info-tooltip {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: #1a1a1a;
+  border: 1px solid #43e97b;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  max-width: 250px;
+  z-index: 100;
+}
+
+.model-info-tooltip strong {
+  color: #43e97b;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.model-info-tooltip p {
+  color: #888;
+  margin: 0;
+  line-height: 1.4;
+}
+

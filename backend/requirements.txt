@@ -9,4 +9,5 @@ opencv-python>=4.8.0
 pydantic==2.5.0
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+transformers>=4.35.0
 
