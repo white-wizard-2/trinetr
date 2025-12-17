@@ -14,7 +14,7 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from torchvision.models.feature_extraction import create_feature_extractor
 
-# Interpolation methods mapping
+# Interpolation methods mapping for image preprocessing
 INTERPOLATION_METHODS = {
     'nearest': Image.Resampling.NEAREST,
     'bilinear': Image.Resampling.BILINEAR,
@@ -126,6 +126,140 @@ async def visualize_preprocessing(
                 "box": "Simple averaging of pixels. Good for downscaling.",
                 "hamming": "Similar to bilinear but with different weights. Less blurry edges.",
             }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/preprocess/transform")
+async def transform_image(
+    file: UploadFile = File(...),
+    target_size: int = 224,
+    interpolation: str = "bilinear",
+    brightness: float = 0,
+    contrast: float = 0,
+    saturation: float = 0,
+    red_shift: float = 0,
+    green_shift: float = 0,
+    blue_shift: float = 0,
+    blur: float = 0,
+    noise: float = 0,
+    rotation: float = 0,
+    flip_h: bool = False,
+    flip_v: bool = False,
+    occlusion_enabled: bool = False,
+    occlusion_x: float = 50,
+    occlusion_y: float = 50,
+    occlusion_size: float = 20,
+):
+    """Transform an image with various adjustments and return both original and processed"""
+    try:
+        from PIL import ImageEnhance, ImageFilter
+        
+        # Read and open original image
+        contents = await file.read()
+        original_image = Image.open(io.BytesIO(contents)).convert('RGB')
+        original_size = original_image.size
+        
+        # Get interpolation method
+        if interpolation not in INTERPOLATION_METHODS:
+            interpolation = "bilinear"
+        interp_method = INTERPOLATION_METHODS[interpolation]
+        
+        # Resize original for display (thumbnail)
+        display_original = original_image.copy()
+        display_original.thumbnail((224, 224), Image.Resampling.LANCZOS)
+        
+        # Start processing: resize first
+        processed = original_image.resize((target_size, target_size), interp_method)
+        
+        # Apply rotation
+        if rotation != 0:
+            processed = processed.rotate(-rotation, resample=Image.Resampling.BILINEAR, expand=False, fillcolor=(128, 128, 128))
+        
+        # Apply flips
+        if flip_h:
+            processed = processed.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+        if flip_v:
+            processed = processed.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+        
+        # Apply brightness
+        if brightness != 0:
+            enhancer = ImageEnhance.Brightness(processed)
+            processed = enhancer.enhance(1 + brightness / 100)
+        
+        # Apply contrast
+        if contrast != 0:
+            enhancer = ImageEnhance.Contrast(processed)
+            processed = enhancer.enhance(1 + contrast / 100)
+        
+        # Apply saturation
+        if saturation != 0:
+            enhancer = ImageEnhance.Color(processed)
+            processed = enhancer.enhance(1 + saturation / 100)
+        
+        # Apply color shifts
+        if red_shift != 0 or green_shift != 0 or blue_shift != 0:
+            arr = np.array(processed, dtype=np.float32)
+            arr[:, :, 0] = np.clip(arr[:, :, 0] + red_shift * 2.55, 0, 255)
+            arr[:, :, 1] = np.clip(arr[:, :, 1] + green_shift * 2.55, 0, 255)
+            arr[:, :, 2] = np.clip(arr[:, :, 2] + blue_shift * 2.55, 0, 255)
+            processed = Image.fromarray(arr.astype(np.uint8))
+        
+        # Apply blur
+        if blur > 0:
+            processed = processed.filter(ImageFilter.GaussianBlur(radius=blur))
+        
+        # Apply noise
+        if noise > 0:
+            arr = np.array(processed, dtype=np.float32)
+            noise_arr = np.random.normal(0, noise * 2.55, arr.shape)
+            arr = np.clip(arr + noise_arr, 0, 255)
+            processed = Image.fromarray(arr.astype(np.uint8))
+        
+        # Apply occlusion
+        if occlusion_enabled:
+            arr = np.array(processed)
+            ox = int((occlusion_x / 100) * target_size)
+            oy = int((occlusion_y / 100) * target_size)
+            size = int((occlusion_size / 100) * target_size)
+            x1 = max(0, ox - size // 2)
+            x2 = min(target_size, ox + size // 2)
+            y1 = max(0, oy - size // 2)
+            y2 = min(target_size, oy + size // 2)
+            arr[y1:y2, x1:x2] = 128  # Gray occlusion
+            processed = Image.fromarray(arr)
+        
+        # Convert images to base64
+        orig_buffer = io.BytesIO()
+        display_original.save(orig_buffer, format='PNG')
+        orig_base64 = base64.b64encode(orig_buffer.getvalue()).decode('utf-8')
+        
+        proc_buffer = io.BytesIO()
+        processed.save(proc_buffer, format='PNG')
+        proc_base64 = base64.b64encode(proc_buffer.getvalue()).decode('utf-8')
+        
+        # Calculate stats
+        scale_x = target_size / original_size[0]
+        scale_y = target_size / original_size[1]
+        
+        orig_arr = np.array(display_original)
+        proc_arr = np.array(processed)
+        
+        return {
+            "original_size": list(original_size),
+            "target_size": [target_size, target_size],
+            "scale_factor": [round(scale_x, 4), round(scale_y, 4)],
+            "interpolation": interpolation,
+            "original_image": f"data:image/png;base64,{orig_base64}",
+            "processed_image": f"data:image/png;base64,{proc_base64}",
+            "original_stats": {
+                "mean": [float(orig_arr[:,:,i].mean()) for i in range(3)],
+                "std": [float(orig_arr[:,:,i].std()) for i in range(3)],
+            },
+            "processed_stats": {
+                "mean": [float(proc_arr[:,:,i].mean()) for i in range(3)],
+                "std": [float(proc_arr[:,:,i].std()) for i in range(3)],
+            },
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

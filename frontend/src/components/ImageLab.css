@@ -1,0 +1,343 @@
+.image-lab {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.lab-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #333;
+}
+
+.lab-header h2 {
+  color: #667eea;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.lab-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.run-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 4px;
+  color: white;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.run-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reset-btn, .info-btn {
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #aaa;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.reset-btn:hover, .info-btn:hover {
+  background: #444;
+}
+
+.info-panel {
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.7rem;
+  color: #888;
+}
+
+.info-panel p { margin: 0 0 0.5rem 0; }
+.info-panel ul { margin: 0; padding-left: 1.25rem; }
+.info-panel li { margin: 0.25rem 0; }
+.info-panel strong { color: #43e97b; }
+
+.lab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.images-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  position: relative;
+  min-height: 130px;
+}
+
+.image-box {
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.5rem;
+  text-align: center;
+}
+
+.image-box.processed {
+  border-color: #667eea;
+  position: relative;
+}
+
+.image-box h4 {
+  color: #888;
+  font-size: 0.65rem;
+  margin: 0 0 0.35rem 0;
+}
+
+.image-box img {
+  max-width: 110px;
+  max-height: 110px;
+  border-radius: 4px;
+  background: #000;
+}
+
+.modified-badge {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  background: #43e97b;
+  color: #000;
+  font-size: 0.55rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+.arrow {
+  color: #667eea;
+  font-size: 1.25rem;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 0.8rem;
+  border-radius: 6px;
+}
+
+.scale-info {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.scale-badge, .interpolation-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.scale-badge {
+  background: #1a2a3a;
+  color: #64b5f6;
+}
+
+.scale-badge.downscale { background: #2a1a3a; color: #b388ff; }
+.scale-badge.upscale { background: #1a2a3a; color: #64b5f6; }
+
+.interpolation-badge {
+  background: #1a3a2a;
+  color: #81c784;
+  text-transform: uppercase;
+}
+
+.controls-section {
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.tabs button {
+  flex: 1;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #666;
+  padding: 0.3rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.tabs button:hover { background: #252525; color: #888; }
+.tabs button.active { background: #252525; border-color: #667eea; color: #667eea; }
+
+.tab-panel {
+  padding: 0.5rem 0;
+}
+
+.controls-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.control label {
+  color: #888;
+  font-size: 0.7rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+.control select {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #e0e0e0;
+  padding: 0.3rem;
+  font-size: 0.75rem;
+}
+
+.control input[type="range"] {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  background: #333;
+  border-radius: 2px;
+}
+
+.control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #667eea;
+  cursor: pointer;
+}
+
+.control.red input[type="range"]::-webkit-slider-thumb { background: #ff6b6b; }
+.control.green input[type="range"]::-webkit-slider-thumb { background: #69db7c; }
+.control.blue input[type="range"]::-webkit-slider-thumb { background: #74c0fc; }
+
+.control.red label { color: #ff6b6b; }
+.control.green label { color: #69db7c; }
+.control.blue label { color: #74c0fc; }
+
+.control input[type="range"]:disabled { opacity: 0.3; }
+
+.checkbox-row {
+  display: flex;
+  gap: 1rem;
+}
+
+.checkbox-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #888;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.checkbox-row input[type="checkbox"] {
+  accent-color: #667eea;
+}
+
+.predictions-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.pred-column {
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+
+.pred-column.modified { border-color: #43e97b; }
+
+.pred-column h4 {
+  color: #666;
+  font-size: 0.7rem;
+  margin: 0 0 0.35rem 0;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #333;
+}
+
+.pred-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.65rem;
+  padding: 0.15rem 0;
+}
+
+.pred-item .label {
+  flex: 1;
+  color: #aaa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pred-item .prob {
+  color: #667eea;
+  font-family: monospace;
+}
+
+.pred-item .delta {
+  font-family: monospace;
+  font-size: 0.6rem;
+  padding: 0.1rem 0.2rem;
+  border-radius: 2px;
+}
+
+.pred-item .delta.pos { color: #69db7c; background: rgba(105,219,124,0.1); }
+.pred-item .delta.neg { color: #ff6b6b; background: rgba(255,107,107,0.1); }
+
+.loading-text, .hint {
+  color: #555;
+  font-size: 0.65rem;
+}
+
+.info-box {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: #888;
+}
+
+.info-box h3 {
+  color: #667eea;
+  margin-bottom: 0.5rem;
+}
+

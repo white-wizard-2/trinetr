@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import ModelLoader from './components/ModelLoader'
 import ImageUploader from './components/ImageUploader'
 import ModelArchitecture from './components/ModelArchitecture'
-import PreprocessingVisualizer from './components/PreprocessingVisualizer'
+import ImageLab from './components/ImageLab'
 import ActivationVisualizer from './components/ActivationVisualizer'
 import PredictionViewer from './components/PredictionViewer'
 import './App.css'
@@ -61,7 +61,7 @@ function App() {
           <div className="visualization-panel">
             <div className="panel-tabs">
               <div className="tab-content">
-                <PreprocessingVisualizer imageFile={imageFile} />
+                <ImageLab imageFile={imageFile} modelId={modelId} />
               </div>
               
               <div className="tab-content">
