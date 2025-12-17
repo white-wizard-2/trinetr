@@ -150,10 +150,13 @@ async def transform_image(
     occlusion_x: float = 50,
     occlusion_y: float = 50,
     occlusion_size: float = 20,
+    use_custom_kernel: bool = False,
+    custom_kernel: str = "[[1]]",
 ):
     """Transform an image with various adjustments and return both original and processed"""
     try:
-        from PIL import ImageEnhance, ImageFilter
+        from PIL import ImageEnhance, ImageFilter, ImageOps
+        import json
         
         # Read and open original image
         contents = await file.read()
@@ -228,6 +231,35 @@ async def transform_image(
             y2 = min(target_size, oy + size // 2)
             arr[y1:y2, x1:x2] = 128  # Gray occlusion
             processed = Image.fromarray(arr)
+        
+        # Apply custom convolution kernel using numpy
+        if use_custom_kernel:
+            try:
+                kernel = json.loads(custom_kernel)
+                kernel_array = np.array(kernel, dtype=np.float32)
+                arr = np.array(processed, dtype=np.float32)
+                
+                # Simple convolution using numpy
+                kh, kw = kernel_array.shape
+                pad_h, pad_w = kh // 2, kw // 2
+                
+                # Apply kernel to each channel
+                result = np.zeros_like(arr)
+                for c in range(3):
+                    channel = arr[:, :, c]
+                    # Pad the image
+                    padded = np.pad(channel, ((pad_h, pad_h), (pad_w, pad_w)), mode='reflect')
+                    # Convolve
+                    for i in range(arr.shape[0]):
+                        for j in range(arr.shape[1]):
+                            region = padded[i:i+kh, j:j+kw]
+                            result[i, j, c] = np.sum(region * kernel_array)
+                
+                # Clip and convert back
+                result = np.clip(result, 0, 255).astype(np.uint8)
+                processed = Image.fromarray(result)
+            except Exception as e:
+                print(f"Custom kernel error: {e}")
         
         # Convert images to base64
         orig_buffer = io.BytesIO()

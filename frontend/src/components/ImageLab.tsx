@@ -71,13 +71,140 @@ function ImageLab({ imageFile, modelId }: ImageLabProps) {
   const [predicting, setPredicting] = useState(false)
   const [activeTab, setActiveTab] = useState<'preprocess' | 'adjust' | 'color' | 'transform' | 'occlusion'>('preprocess')
   const [showInfo, setShowInfo] = useState(false)
+  const [showKernel, setShowKernel] = useState(false)
+  const [selectedPreset, setSelectedPreset] = useState('bilinear')
+  const [customKernel, setCustomKernel] = useState<number[][]>([
+    [0.25, 0.25],
+    [0.25, 0.25]
+  ])
+  const [useCustomKernel, setUseCustomKernel] = useState(false)
+
+  // Predefined kernels for visualization
+  const kernelPresets: { [key: string]: { size: number, weights: number[][], description: string } } = {
+    nearest: {
+      size: 1,
+      weights: [[1]],
+      description: 'Takes the value of the nearest pixel. Fast but pixelated.'
+    },
+    bilinear: {
+      size: 2,
+      weights: [
+        [0.25, 0.25],
+        [0.25, 0.25]
+      ],
+      description: 'Linear interpolation using 4 neighboring pixels. Weights based on distance.'
+    },
+    bicubic: {
+      size: 4,
+      weights: [
+        [-0.01, -0.03, -0.03, -0.01],
+        [-0.03,  0.36,  0.36, -0.03],
+        [-0.03,  0.36,  0.36, -0.03],
+        [-0.01, -0.03, -0.03, -0.01]
+      ],
+      description: 'Cubic interpolation using 16 pixels. Smoother results with slight sharpening.'
+    },
+    sharpen: {
+      size: 3,
+      weights: [
+        [0, -1, 0],
+        [-1, 5, -1],
+        [0, -1, 0]
+      ],
+      description: 'Enhances edges by emphasizing center and subtracting neighbors.'
+    },
+    blur: {
+      size: 3,
+      weights: [
+        [0.111, 0.111, 0.111],
+        [0.111, 0.111, 0.111],
+        [0.111, 0.111, 0.111]
+      ],
+      description: 'Box blur - averages all 9 pixels equally.'
+    },
+    gaussian: {
+      size: 3,
+      weights: [
+        [0.0625, 0.125, 0.0625],
+        [0.125,  0.25,  0.125],
+        [0.0625, 0.125, 0.0625]
+      ],
+      description: 'Gaussian blur - weighted average with center emphasis.'
+    },
+    edge_detect: {
+      size: 3,
+      weights: [
+        [-1, -1, -1],
+        [-1,  8, -1],
+        [-1, -1, -1]
+      ],
+      description: 'Laplacian edge detection - highlights edges in all directions.'
+    },
+    emboss: {
+      size: 3,
+      weights: [
+        [-2, -1, 0],
+        [-1,  1, 1],
+        [ 0,  1, 2]
+      ],
+      description: 'Creates embossed/3D effect by highlighting directional changes.'
+    }
+  }
+
+  const updateKernelCell = (row: number, col: number, value: string) => {
+    const newKernel = customKernel.map((r, ri) => 
+      r.map((c, ci) => (ri === row && ci === col) ? parseFloat(value) || 0 : c)
+    )
+    setCustomKernel(newKernel)
+    setSelectedPreset('custom')
+    setUseCustomKernel(true)
+  }
+
+  const resizeKernel = (newSize: number) => {
+    const newKernel: number[][] = []
+    for (let i = 0; i < newSize; i++) {
+      newKernel.push(new Array(newSize).fill(0))
+    }
+    // Copy existing values where possible
+    for (let i = 0; i < Math.min(newSize, customKernel.length); i++) {
+      for (let j = 0; j < Math.min(newSize, customKernel[0].length); j++) {
+        newKernel[i][j] = customKernel[i][j]
+      }
+    }
+    // Set center to 1 if new
+    if (newSize > customKernel.length) {
+      const center = Math.floor(newSize / 2)
+      newKernel[center][center] = 1
+    }
+    setCustomKernel(newKernel)
+  }
+
+  const loadPreset = (presetName: string) => {
+    const preset = kernelPresets[presetName]
+    if (preset) {
+      setSelectedPreset(presetName)
+      setCustomKernel(preset.weights.map(row => [...row]))
+      setUseCustomKernel(true)
+    }
+  }
+
+  const getKernelSum = () => {
+    return customKernel.reduce((sum, row) => sum + row.reduce((s, v) => s + v, 0), 0)
+  }
+
+  const normalizeKernel = () => {
+    const sum = getKernelSum()
+    if (sum !== 0) {
+      setCustomKernel(customKernel.map(row => row.map(v => v / sum)))
+    }
+  }
 
   // Process image when file or settings change
   useEffect(() => {
     if (imageFile) {
       processImage()
     }
-  }, [imageFile, interpolation, targetSize, adjustments])
+  }, [imageFile, interpolation, targetSize, adjustments, customKernel, useCustomKernel])
 
   // Fetch original predictions when model/file changes
   useEffect(() => {
@@ -104,6 +231,8 @@ function ImageLab({ imageFile, modelId }: ImageLabProps) {
         green_shift: adjustments.greenShift.toString(),
         blue_shift: adjustments.blueShift.toString(),
         blur: adjustments.blur.toString(),
+        use_custom_kernel: useCustomKernel.toString(),
+        custom_kernel: JSON.stringify(customKernel),
         noise: adjustments.noise.toString(),
         rotation: adjustments.rotation.toString(),
         flip_h: adjustments.flipH.toString(),
@@ -186,6 +315,7 @@ function ImageLab({ imageFile, modelId }: ImageLabProps) {
   }
 
   const hasAdjustments = () => {
+    if (useCustomKernel && selectedPreset !== 'bilinear') return true
     return Object.entries(adjustments).some(([key, value]) => {
       if (key === 'occlusionX' || key === 'occlusionY' || key === 'occlusionSize') return false
       if (typeof value === 'boolean') return value
@@ -275,7 +405,98 @@ function ImageLab({ imageFile, modelId }: ImageLabProps) {
             {processedData && ` ${(processedData.scale_factor[0] * 100).toFixed(0)}%`}
           </span>
           <span className="interpolation-badge">{interpolation}</span>
+          <button className="kernel-btn" onClick={() => setShowKernel(!showKernel)}>
+            🔢 {showKernel ? 'Hide' : 'Show'} Kernel
+          </button>
         </div>
+
+        {showKernel && (
+          <div className="kernel-panel">
+            <div className="kernel-header">
+              <h4>Convolution Kernel: {selectedPreset}</h4>
+              <p className="kernel-desc">
+                {kernelPresets[selectedPreset]?.description || 'Custom kernel - edit values below'}
+              </p>
+              {useCustomKernel && (
+                <span className="kernel-active-badge">✓ Applied to image</span>
+              )}
+            </div>
+            
+            <div className="kernel-content">
+              <div className="kernel-presets">
+                <label>Load Preset:</label>
+                <div className="preset-buttons">
+                  {Object.keys(kernelPresets).map(name => (
+                    <button 
+                      key={name} 
+                      onClick={() => loadPreset(name)}
+                      className={selectedPreset === name ? 'active' : ''}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="kernel-editor">
+                <div className="kernel-size-control">
+                  <label>Kernel Size: {customKernel.length}×{customKernel.length}</label>
+                  <input 
+                    type="range" 
+                    min="1" 
+                    max="7" 
+                    step="2"
+                    value={customKernel.length}
+                    onChange={(e) => resizeKernel(Number(e.target.value))}
+                  />
+                </div>
+                
+                <div className="kernel-grid" style={{ 
+                  gridTemplateColumns: `repeat(${customKernel.length}, 1fr)` 
+                }}>
+                  {customKernel.map((row, ri) => 
+                    row.map((val, ci) => (
+                      <input
+                        key={`${ri}-${ci}`}
+                        type="number"
+                        step="0.01"
+                        value={val.toFixed(2)}
+                        onChange={(e) => updateKernelCell(ri, ci, e.target.value)}
+                        className={`kernel-cell ${val > 0 ? 'positive' : val < 0 ? 'negative' : 'zero'}`}
+                        style={{
+                          backgroundColor: val > 0 
+                            ? `rgba(67, 233, 123, ${Math.min(Math.abs(val), 1) * 0.5})` 
+                            : val < 0 
+                              ? `rgba(255, 107, 107, ${Math.min(Math.abs(val), 1) * 0.5})`
+                              : 'transparent'
+                        }}
+                      />
+                    ))
+                  )}
+                </div>
+
+                <div className="kernel-stats">
+                  <span>Sum: {getKernelSum().toFixed(3)}</span>
+                  <button onClick={normalizeKernel} className="normalize-btn">
+                    Normalize to 1.0
+                  </button>
+                </div>
+              </div>
+
+              <div className="kernel-explanation">
+                <h5>How Kernels Work:</h5>
+                <p>Each cell represents a weight multiplied with the corresponding pixel. 
+                The weighted sum produces the output pixel value.</p>
+                <ul>
+                  <li><span className="pos-indicator">Green</span> = positive (brightens)</li>
+                  <li><span className="neg-indicator">Red</span> = negative (darkens/edges)</li>
+                  <li>Sum ≈ 1.0 preserves brightness</li>
+                  <li>Sum = 0 detects edges</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="controls-section">
           <div className="tabs">
