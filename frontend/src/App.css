@@ -72,6 +72,38 @@
   background: #333;
 }
 
+.model-type-selector {
+  display: flex;
+  gap: 0.25rem;
+  background: #0d0d0d;
+  padding: 0.2rem;
+  border-radius: 6px;
+  border: 1px solid #333;
+}
+
+.type-btn {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #888;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.type-btn:hover {
+  color: #aaa;
+  background: #1a1a1a;
+}
+
+.type-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+}
+
 .app-main {
   display: flex;
   flex: 1;

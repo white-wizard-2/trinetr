@@ -1084,6 +1084,673 @@ async def predict(model_id: str, file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============== TRANSFORMER MODELS ==============
+
+# Storage for transformer models
+loaded_transformers = {}
+
+# Transformer model configurations
+TRANSFORMER_MODELS = {
+    'text': {
+        'bert-base': {
+            'hf_name': 'bert-base-uncased',
+            'type': 'encoder',
+            'description': 'BERT base model for text understanding'
+        },
+        'distilbert': {
+            'hf_name': 'distilbert-base-uncased',
+            'type': 'encoder',
+            'description': 'Smaller, faster BERT'
+        },
+        'gpt2': {
+            'hf_name': 'gpt2',
+            'type': 'decoder',
+            'description': 'GPT-2 for text generation'
+        },
+        'roberta': {
+            'hf_name': 'roberta-base',
+            'type': 'encoder',
+            'description': 'Robustly optimized BERT'
+        },
+    },
+    'image': {
+        'vit-base': {
+            'hf_name': 'google/vit-base-patch16-224',
+            'type': 'encoder',
+            'description': 'Vision Transformer for image classification'
+        },
+        'deit-small': {
+            'hf_name': 'facebook/deit-small-patch16-224',
+            'type': 'encoder',
+            'description': 'Data-efficient Image Transformer'
+        },
+        'swin-tiny': {
+            'hf_name': 'microsoft/swin-tiny-patch4-window7-224',
+            'type': 'encoder',
+            'description': 'Shifted Window Transformer'
+        },
+        'clip-vit': {
+            'hf_name': 'openai/clip-vit-base-patch16',
+            'type': 'encoder',
+            'description': 'CLIP Vision Transformer'
+        },
+    }
+}
+
+@app.post("/transformers/load")
+async def load_transformer(model_name: str, model_type: str = "text"):
+    """Load a transformer model"""
+    try:
+        from transformers import AutoTokenizer, AutoModel, AutoModelForSequenceClassification
+        from transformers import AutoFeatureExtractor, AutoModelForImageClassification
+        
+        if model_type not in TRANSFORMER_MODELS:
+            raise HTTPException(status_code=400, detail=f"Unknown model type: {model_type}")
+        
+        if model_name not in TRANSFORMER_MODELS[model_type]:
+            raise HTTPException(status_code=400, detail=f"Unknown model: {model_name}")
+        
+        config = TRANSFORMER_MODELS[model_type][model_name]
+        hf_name = config['hf_name']
+        
+        model_id = f"{model_name}_{len(loaded_transformers)}"
+        
+        if model_type == 'text':
+            tokenizer = AutoTokenizer.from_pretrained(hf_name)
+            # GPT-2 and similar models don't have a pad token by default
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            model = AutoModel.from_pretrained(hf_name, output_attentions=True, output_hidden_states=True)
+            model.eval()
+            
+            loaded_transformers[model_id] = {
+                'model': model,
+                'tokenizer': tokenizer,
+                'type': model_type,
+                'model_name': model_name,
+                'config': config
+            }
+        else:  # image
+            feature_extractor = AutoFeatureExtractor.from_pretrained(hf_name)
+            try:
+                model = AutoModelForImageClassification.from_pretrained(hf_name, output_attentions=True, output_hidden_states=True)
+            except:
+                model = AutoModel.from_pretrained(hf_name, output_attentions=True, output_hidden_states=True)
+            model.eval()
+            
+            loaded_transformers[model_id] = {
+                'model': model,
+                'feature_extractor': feature_extractor,
+                'type': model_type,
+                'model_name': model_name,
+                'config': config
+            }
+        
+        # Get model info
+        num_params = sum(p.numel() for p in model.parameters())
+        num_layers = len(model.encoder.layer) if hasattr(model, 'encoder') and hasattr(model.encoder, 'layer') else 12
+        
+        return {
+            "model_id": model_id,
+            "model_name": model_name,
+            "model_type": model_type,
+            "hf_name": hf_name,
+            "num_parameters": num_params,
+            "num_layers": num_layers,
+            "description": config['description']
+        }
+        
+    except ImportError:
+        raise HTTPException(status_code=500, detail="transformers library not installed. Run: pip install transformers")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class TextInferenceRequest(BaseModel):
+    text: str
+    generate_tokens: int = 0  # Number of tokens to generate (0 = just encode)
+
+@app.post("/transformers/{model_id}/infer")
+async def transformer_text_inference(model_id: str, request: TextInferenceRequest):
+    """Run inference on a text transformer model"""
+    if model_id not in loaded_transformers:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model_data = loaded_transformers[model_id]
+    if model_data['type'] != 'text':
+        raise HTTPException(status_code=400, detail="This endpoint is for text models")
+    
+    try:
+        model = model_data['model']
+        tokenizer = model_data['tokenizer']
+        model_name = model_data.get('model_name', '')
+        config = model_data.get('config', {})
+        is_decoder = config.get('type') == 'decoder' or 'gpt' in model_name.lower()
+        
+        # Tokenize input
+        inputs = tokenizer(request.text, return_tensors='pt', padding=True, truncation=True, max_length=512)
+        input_ids = inputs['input_ids']
+        tokens = tokenizer.convert_ids_to_tokens(input_ids[0])
+        
+        # Run inference
+        with torch.no_grad():
+            outputs = model(**inputs)
+        
+        # Extract attention weights - handle different model architectures
+        attention_layers = []
+        attentions = getattr(outputs, 'attentions', None)
+        if attentions:
+            for layer_idx, attention in enumerate(attentions):
+                if attention is not None:
+                    num_heads = min(attention.shape[1], 12)
+                    for head_idx in range(num_heads):
+                        attention_layers.append({
+                            "layer": layer_idx,
+                            "head": head_idx,
+                            "attention_weights": attention[0, head_idx].cpu().numpy().tolist(),
+                            "tokens": tokens
+                        })
+        
+        # Extract Q, K, V weight info and compute actual QKV values
+        qkv_info = None
+        attention_flow = []  # Layer-by-layer flow data
+        kv_cache_info = None
+        
+        try:
+            hidden_size = model.config.hidden_size
+            num_attention_heads = model.config.num_attention_heads
+            num_layers = model.config.num_hidden_layers
+            head_dim = hidden_size // num_attention_heads
+            seq_len = len(tokens)
+            
+            # Get hidden states for computing actual QKV values
+            all_hidden_states = getattr(outputs, 'hidden_states', None)
+            all_attentions = getattr(outputs, 'attentions', None)
+            
+            # KV Cache info (theoretical for this sequence)
+            kv_cache_info = {
+                "enabled": True,
+                "shape": {
+                    "keys": [num_layers, seq_len, num_attention_heads, head_dim],
+                    "values": [num_layers, seq_len, num_attention_heads, head_dim]
+                },
+                "size_per_token_bytes": num_layers * 2 * num_attention_heads * head_dim * 4,  # float32
+                "total_size_bytes": num_layers * 2 * seq_len * num_attention_heads * head_dim * 4,
+                "total_size_mb": round(num_layers * 2 * seq_len * num_attention_heads * head_dim * 4 / (1024 * 1024), 4)
+            }
+            
+            # Get the first encoder/decoder layer to extract QKV info
+            if hasattr(model, 'encoder') and hasattr(model.encoder, 'layer'):
+                # BERT-style
+                layers = model.encoder.layer
+                first_layer = layers[0]
+                attn = first_layer.attention.self
+                
+                qkv_info = {
+                    "hidden_size": hidden_size,
+                    "num_heads": num_attention_heads,
+                    "head_dim": head_dim,
+                    "num_layers": num_layers,
+                    "query_weight_shape": list(attn.query.weight.shape),
+                    "key_weight_shape": list(attn.key.weight.shape),
+                    "value_weight_shape": list(attn.value.weight.shape),
+                    "query_bias": attn.query.bias is not None,
+                    "key_bias": attn.key.bias is not None,
+                    "value_bias": attn.value.bias is not None,
+                    "query_weight_sample": attn.query.weight[:8, :8].detach().cpu().numpy().tolist(),
+                    "key_weight_sample": attn.key.weight[:8, :8].detach().cpu().numpy().tolist(),
+                    "value_weight_sample": attn.value.weight[:8, :8].detach().cpu().numpy().tolist(),
+                }
+                
+                # Compute actual Q, K, V values for each layer
+                if all_hidden_states:
+                    for layer_idx, layer in enumerate(layers):
+                        if layer_idx >= len(all_hidden_states) - 1:
+                            break
+                        
+                        layer_attn = layer.attention.self
+                        hidden_state = all_hidden_states[layer_idx]  # [batch, seq, hidden]
+                        
+                        # Compute Q, K, V
+                        with torch.no_grad():
+                            Q = layer_attn.query(hidden_state)  # [batch, seq, hidden]
+                            K = layer_attn.key(hidden_state)
+                            V = layer_attn.value(hidden_state)
+                            
+                            # Reshape for multi-head: [batch, seq, num_heads, head_dim]
+                            batch_size = Q.shape[0]
+                            Q_heads = Q.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                            K_heads = K.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                            V_heads = V.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                        
+                        # Get attention weights for this layer
+                        layer_attention = all_attentions[layer_idx] if all_attentions and layer_idx < len(all_attentions) else None
+                        
+                        layer_flow = {
+                            "layer": layer_idx,
+                            "input_shape": list(hidden_state.shape),
+                            "heads": []
+                        }
+                        
+                        for head_idx in range(min(num_attention_heads, 12)):
+                            head_data = {
+                                "head": head_idx,
+                                "Q_shape": [seq_len, head_dim],
+                                "K_shape": [seq_len, head_dim],
+                                "V_shape": [seq_len, head_dim],
+                                # Sample values for first 5 tokens, first 8 dims
+                                "Q_sample": Q_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "K_sample": K_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "V_sample": V_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                # Statistics
+                                "Q_stats": {
+                                    "mean": float(Q_heads[0, head_idx].mean().item()),
+                                    "std": float(Q_heads[0, head_idx].std().item()),
+                                    "min": float(Q_heads[0, head_idx].min().item()),
+                                    "max": float(Q_heads[0, head_idx].max().item())
+                                },
+                                "K_stats": {
+                                    "mean": float(K_heads[0, head_idx].mean().item()),
+                                    "std": float(K_heads[0, head_idx].std().item()),
+                                    "min": float(K_heads[0, head_idx].min().item()),
+                                    "max": float(K_heads[0, head_idx].max().item())
+                                },
+                                "V_stats": {
+                                    "mean": float(V_heads[0, head_idx].mean().item()),
+                                    "std": float(V_heads[0, head_idx].std().item()),
+                                    "min": float(V_heads[0, head_idx].min().item()),
+                                    "max": float(V_heads[0, head_idx].max().item())
+                                },
+                            }
+                            
+                            # Add attention weights for this head
+                            if layer_attention is not None:
+                                head_data["attention_weights"] = layer_attention[0, head_idx, :10, :10].cpu().numpy().tolist()
+                            
+                            layer_flow["heads"].append(head_data)
+                        
+                        # Output hidden state stats
+                        if layer_idx + 1 < len(all_hidden_states):
+                            output_hidden = all_hidden_states[layer_idx + 1]
+                            layer_flow["output_stats"] = {
+                                "mean": float(output_hidden.mean().item()),
+                                "std": float(output_hidden.std().item())
+                            }
+                        
+                        attention_flow.append(layer_flow)
+                        
+                        # Limit to first 6 layers for performance
+                        if layer_idx >= 5:
+                            break
+                
+            elif hasattr(model, 'h'):  # GPT-2 style
+                first_layer = model.h[0]
+                attn = first_layer.attn
+                
+                qkv_info = {
+                    "hidden_size": hidden_size,
+                    "num_heads": num_attention_heads,
+                    "head_dim": head_dim,
+                    "num_layers": num_layers,
+                    "combined_qkv": True,
+                    "c_attn_weight_shape": list(attn.c_attn.weight.shape) if hasattr(attn, 'c_attn') else None,
+                    "qkv_weight_sample": attn.c_attn.weight[:8, :24].detach().cpu().numpy().tolist() if hasattr(attn, 'c_attn') else None,
+                }
+                
+                # Compute actual Q, K, V for GPT-2 style
+                if all_hidden_states:
+                    for layer_idx, layer in enumerate(model.h):
+                        if layer_idx >= len(all_hidden_states) - 1:
+                            break
+                        
+                        hidden_state = all_hidden_states[layer_idx]
+                        layer_attn = layer.attn
+                        
+                        with torch.no_grad():
+                            # GPT-2 combines QKV in c_attn
+                            qkv = layer_attn.c_attn(hidden_state)
+                            Q, K, V = qkv.split(hidden_size, dim=-1)
+                            
+                            batch_size = Q.shape[0]
+                            Q_heads = Q.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                            K_heads = K.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                            V_heads = V.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                        
+                        layer_attention = all_attentions[layer_idx] if all_attentions and layer_idx < len(all_attentions) else None
+                        
+                        layer_flow = {
+                            "layer": layer_idx,
+                            "input_shape": list(hidden_state.shape),
+                            "heads": []
+                        }
+                        
+                        for head_idx in range(min(num_attention_heads, 12)):
+                            head_data = {
+                                "head": head_idx,
+                                "Q_shape": [seq_len, head_dim],
+                                "K_shape": [seq_len, head_dim],
+                                "V_shape": [seq_len, head_dim],
+                                "Q_sample": Q_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "K_sample": K_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "V_sample": V_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "Q_stats": {
+                                    "mean": float(Q_heads[0, head_idx].mean().item()),
+                                    "std": float(Q_heads[0, head_idx].std().item()),
+                                    "min": float(Q_heads[0, head_idx].min().item()),
+                                    "max": float(Q_heads[0, head_idx].max().item())
+                                },
+                                "K_stats": {
+                                    "mean": float(K_heads[0, head_idx].mean().item()),
+                                    "std": float(K_heads[0, head_idx].std().item()),
+                                    "min": float(K_heads[0, head_idx].min().item()),
+                                    "max": float(K_heads[0, head_idx].max().item())
+                                },
+                                "V_stats": {
+                                    "mean": float(V_heads[0, head_idx].mean().item()),
+                                    "std": float(V_heads[0, head_idx].std().item()),
+                                    "min": float(V_heads[0, head_idx].min().item()),
+                                    "max": float(V_heads[0, head_idx].max().item())
+                                },
+                            }
+                            
+                            if layer_attention is not None:
+                                head_data["attention_weights"] = layer_attention[0, head_idx, :10, :10].cpu().numpy().tolist()
+                            
+                            layer_flow["heads"].append(head_data)
+                        
+                        if layer_idx + 1 < len(all_hidden_states):
+                            output_hidden = all_hidden_states[layer_idx + 1]
+                            layer_flow["output_stats"] = {
+                                "mean": float(output_hidden.mean().item()),
+                                "std": float(output_hidden.std().item())
+                            }
+                        
+                        attention_flow.append(layer_flow)
+                        
+                        if layer_idx >= 5:
+                            break
+                            
+        except Exception as e:
+            import traceback
+            print(f"Could not extract QKV info: {e}")
+            traceback.print_exc()
+        
+        # Extract embeddings (last hidden state)
+        embeddings = []
+        last_hidden = getattr(outputs, 'last_hidden_state', None)
+        if last_hidden is not None:
+            embeddings = last_hidden[0].cpu().numpy().tolist()
+        
+        # Get hidden states if available
+        hidden_states = None
+        hs = getattr(outputs, 'hidden_states', None)
+        if hs:
+            hidden_states = [h[0].cpu().numpy().tolist() for h in hs[-3:]]
+        
+        # For decoder models (GPT-2), do next token prediction
+        generation_steps = []
+        generated_tokens = []
+        
+        if is_decoder and request.generate_tokens > 0:
+            current_ids = input_ids.clone()
+            
+            for step in range(request.generate_tokens):
+                with torch.no_grad():
+                    # Get model output
+                    step_outputs = model(current_ids, output_attentions=True)
+                    
+                    # Get logits for the last token position
+                    # For GPT-2 base model, we need to use the hidden states with lm_head
+                    # But since we loaded AutoModel, we need to compute logits differently
+                    last_hidden_state = step_outputs.last_hidden_state
+                    
+                    # Get the embedding matrix (word embeddings) to compute logits
+                    if hasattr(model, 'wte'):  # GPT-2
+                        lm_head = model.wte.weight
+                    elif hasattr(model, 'embeddings') and hasattr(model.embeddings, 'word_embeddings'):
+                        lm_head = model.embeddings.word_embeddings.weight
+                    else:
+                        # Fallback: just show the process without actual generation
+                        break
+                    
+                    # Compute logits: hidden_state @ embedding_matrix.T
+                    last_position_hidden = last_hidden_state[0, -1, :]  # [hidden_size]
+                    logits = torch.matmul(last_position_hidden, lm_head.T)  # [vocab_size]
+                    
+                    # Apply softmax to get probabilities
+                    probs = torch.nn.functional.softmax(logits, dim=-1)
+                    
+                    # Get top 10 predictions
+                    top_probs, top_indices = torch.topk(probs, 10)
+                    top_tokens = [tokenizer.decode([idx.item()]) for idx in top_indices]
+                    
+                    # Select the most likely token (greedy)
+                    next_token_id = top_indices[0].item()
+                    next_token = tokenizer.decode([next_token_id])
+                    
+                    # Store step info
+                    generation_steps.append({
+                        "step": step + 1,
+                        "input_so_far": tokenizer.decode(current_ids[0]),
+                        "top_predictions": [
+                            {"token": tok, "probability": float(prob.item())}
+                            for tok, prob in zip(top_tokens, top_probs)
+                        ],
+                        "selected_token": next_token,
+                        "selected_token_id": next_token_id,
+                        "logits_stats": {
+                            "min": float(logits.min().item()),
+                            "max": float(logits.max().item()),
+                            "mean": float(logits.mean().item()),
+                        }
+                    })
+                    
+                    generated_tokens.append(next_token)
+                    
+                    # Append to input for next iteration
+                    current_ids = torch.cat([current_ids, torch.tensor([[next_token_id]])], dim=1)
+        
+        return {
+            "input_tokens": tokens,
+            "attention_layers": attention_layers,
+            "embeddings": embeddings,
+            "hidden_states": hidden_states,
+            "output_tokens": tokens,
+            "is_decoder": is_decoder,
+            "generation_steps": generation_steps,
+            "generated_text": "".join(generated_tokens) if generated_tokens else None,
+            "full_text": request.text + "".join(generated_tokens) if generated_tokens else request.text,
+            "qkv_info": qkv_info,
+            "attention_flow": attention_flow,
+            "kv_cache_info": kv_cache_info
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/transformers/{model_id}/infer-image")
+async def transformer_image_inference(model_id: str, file: UploadFile = File(...)):
+    """Run inference on an image transformer model"""
+    if model_id not in loaded_transformers:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model_data = loaded_transformers[model_id]
+    if model_data['type'] != 'image':
+        raise HTTPException(status_code=400, detail="This endpoint is for image models")
+    
+    try:
+        model = model_data['model']
+        feature_extractor = model_data['feature_extractor']
+        
+        # Load and preprocess image
+        contents = await file.read()
+        image = Image.open(io.BytesIO(contents)).convert('RGB')
+        inputs = feature_extractor(images=image, return_tensors='pt')
+        
+        # Run inference
+        with torch.no_grad():
+            outputs = model(**inputs)
+        
+        # Extract predictions if available
+        predictions = []
+        logits = getattr(outputs, 'logits', None)
+        if logits is not None:
+            probs = torch.nn.functional.softmax(logits[0], dim=0)
+            k = min(5, probs.shape[0])
+            top_prob, top_idx = torch.topk(probs, k)
+            
+            # Try to get labels from model config, but prefer ImageNet labels if available
+            id2label = getattr(model.config, 'id2label', None)
+            
+            for prob, idx in zip(top_prob, top_idx):
+                idx_val = idx.item()
+                
+                # First try ImageNet labels (most vision models use these)
+                if IMAGENET_LABELS and idx_val < 1000:
+                    label = IMAGENET_LABELS.get(idx_val, None)
+                    if label and not label.startswith("LABEL_"):
+                        predictions.append({
+                            "label": label,
+                            "probability": float(prob.item())
+                        })
+                        continue
+                
+                # Fall back to model's id2label
+                if id2label:
+                    label = id2label.get(idx_val, f"Class {idx_val}")
+                    # Skip generic labels, use class index instead
+                    if label.startswith("LABEL_"):
+                        label = IMAGENET_LABELS.get(idx_val, f"Class {idx_val}") if IMAGENET_LABELS else f"Class {idx_val}"
+                else:
+                    label = IMAGENET_LABELS.get(idx_val, f"Class {idx_val}") if IMAGENET_LABELS else f"Class {idx_val}"
+                
+                predictions.append({
+                    "label": label,
+                    "probability": float(prob.item())
+                })
+        
+        # Extract attention weights - handle different model architectures
+        attention_layers = []
+        attentions = getattr(outputs, 'attentions', None)
+        if attentions:
+            for layer_idx, attention in enumerate(attentions):
+                if attention is not None:
+                    num_heads = min(attention.shape[1], 12)
+                    for head_idx in range(num_heads):
+                        # For ViT, create patch position labels
+                        seq_len = attention.shape[-1]
+                        tokens = ["[CLS]"] + [f"P{i}" for i in range(seq_len - 1)]
+                        attention_layers.append({
+                            "layer": layer_idx,
+                            "head": head_idx,
+                            "attention_weights": attention[0, head_idx].cpu().numpy().tolist(),
+                            "tokens": tokens
+                        })
+        
+        # Extract embeddings
+        embeddings = []
+        last_hidden = getattr(outputs, 'last_hidden_state', None)
+        if last_hidden is not None:
+            embeddings = last_hidden[0].cpu().numpy().tolist()
+        
+        # Extract Q, K, V weight info from ViT model
+        qkv_info = None
+        try:
+            if hasattr(model, 'vit') and hasattr(model.vit, 'encoder'):
+                # ViT model structure
+                first_layer = model.vit.encoder.layer[0]
+                attn = first_layer.attention.attention
+                hidden_size = model.config.hidden_size
+                num_attention_heads = model.config.num_attention_heads
+                head_dim = hidden_size // num_attention_heads
+                
+                qkv_info = {
+                    "hidden_size": hidden_size,
+                    "num_heads": num_attention_heads,
+                    "head_dim": head_dim,
+                    "query_weight_shape": list(attn.query.weight.shape),
+                    "key_weight_shape": list(attn.key.weight.shape),
+                    "value_weight_shape": list(attn.value.weight.shape),
+                    "query_bias": attn.query.bias is not None,
+                    "key_bias": attn.key.bias is not None,
+                    "value_bias": attn.value.bias is not None,
+                    # Sample weights (first 8x8 block for visualization)
+                    "query_weight_sample": attn.query.weight[:8, :8].detach().cpu().numpy().tolist(),
+                    "key_weight_sample": attn.key.weight[:8, :8].detach().cpu().numpy().tolist(),
+                    "value_weight_sample": attn.value.weight[:8, :8].detach().cpu().numpy().tolist(),
+                }
+            elif hasattr(model, 'encoder') and hasattr(model.encoder, 'layers'):
+                # Alternative ViT structure
+                first_layer = model.encoder.layers[0]
+                if hasattr(first_layer, 'self_attn'):
+                    attn = first_layer.self_attn
+                    hidden_size = model.config.hidden_size
+                    num_attention_heads = model.config.num_attention_heads
+                    head_dim = hidden_size // num_attention_heads
+                    
+                    qkv_info = {
+                        "hidden_size": hidden_size,
+                        "num_heads": num_attention_heads,
+                        "head_dim": head_dim,
+                    }
+        except Exception as e:
+            print(f"Could not extract QKV info for image model: {e}")
+        
+        return {
+            "predictions": predictions,
+            "attention_layers": attention_layers,
+            "embeddings": embeddings,
+            "input_tokens": ["[CLS]"] + [f"Patch {i}" for i in range(196)],  # Standard ViT has 196 patches
+            "qkv_info": qkv_info
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/transformers/{model_id}/architecture")
+async def get_transformer_architecture(model_id: str):
+    """Get the architecture of a transformer model"""
+    if model_id not in loaded_transformers:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model_data = loaded_transformers[model_id]
+    model = model_data['model']
+    
+    layers = []
+    
+    def get_layer_info(name, module):
+        layer_info = {
+            "name": name,
+            "type": module.__class__.__name__,
+            "params": sum(p.numel() for p in module.parameters()),
+        }
+        
+        # Add specific info based on layer type
+        if hasattr(module, 'in_features'):
+            layer_info['in_features'] = module.in_features
+            layer_info['out_features'] = module.out_features
+        if hasattr(module, 'num_attention_heads'):
+            layer_info['num_heads'] = module.num_attention_heads
+        if hasattr(module, 'hidden_size'):
+            layer_info['hidden_size'] = module.hidden_size
+            
+        return layer_info
+    
+    for name, module in model.named_modules():
+        if name and not any(child for child in module.children()):
+            layers.append(get_layer_info(name, module))
+    
+    return {
+        "model_id": model_id,
+        "model_name": model_data['model_name'],
+        "type": model_data['type'],
+        "layers": layers,
+        "total_params": sum(p.numel() for p in model.parameters())
+    }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
