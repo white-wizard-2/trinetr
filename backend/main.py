@@ -1250,6 +1250,230 @@ async def transformer_text_inference(model_id: str, request: TextInferenceReques
                             "tokens": tokens
                         })
         
+        # Extract Q, K, V weight info and compute actual QKV values
+        qkv_info = None
+        attention_flow = []  # Layer-by-layer flow data
+        kv_cache_info = None
+        
+        try:
+            hidden_size = model.config.hidden_size
+            num_attention_heads = model.config.num_attention_heads
+            num_layers = model.config.num_hidden_layers
+            head_dim = hidden_size // num_attention_heads
+            seq_len = len(tokens)
+            
+            # Get hidden states for computing actual QKV values
+            all_hidden_states = getattr(outputs, 'hidden_states', None)
+            all_attentions = getattr(outputs, 'attentions', None)
+            
+            # KV Cache info (theoretical for this sequence)
+            kv_cache_info = {
+                "enabled": True,
+                "shape": {
+                    "keys": [num_layers, seq_len, num_attention_heads, head_dim],
+                    "values": [num_layers, seq_len, num_attention_heads, head_dim]
+                },
+                "size_per_token_bytes": num_layers * 2 * num_attention_heads * head_dim * 4,  # float32
+                "total_size_bytes": num_layers * 2 * seq_len * num_attention_heads * head_dim * 4,
+                "total_size_mb": round(num_layers * 2 * seq_len * num_attention_heads * head_dim * 4 / (1024 * 1024), 4)
+            }
+            
+            # Get the first encoder/decoder layer to extract QKV info
+            if hasattr(model, 'encoder') and hasattr(model.encoder, 'layer'):
+                # BERT-style
+                layers = model.encoder.layer
+                first_layer = layers[0]
+                attn = first_layer.attention.self
+                
+                qkv_info = {
+                    "hidden_size": hidden_size,
+                    "num_heads": num_attention_heads,
+                    "head_dim": head_dim,
+                    "num_layers": num_layers,
+                    "query_weight_shape": list(attn.query.weight.shape),
+                    "key_weight_shape": list(attn.key.weight.shape),
+                    "value_weight_shape": list(attn.value.weight.shape),
+                    "query_bias": attn.query.bias is not None,
+                    "key_bias": attn.key.bias is not None,
+                    "value_bias": attn.value.bias is not None,
+                    "query_weight_sample": attn.query.weight[:8, :8].detach().cpu().numpy().tolist(),
+                    "key_weight_sample": attn.key.weight[:8, :8].detach().cpu().numpy().tolist(),
+                    "value_weight_sample": attn.value.weight[:8, :8].detach().cpu().numpy().tolist(),
+                }
+                
+                # Compute actual Q, K, V values for each layer
+                if all_hidden_states:
+                    for layer_idx, layer in enumerate(layers):
+                        if layer_idx >= len(all_hidden_states) - 1:
+                            break
+                        
+                        layer_attn = layer.attention.self
+                        hidden_state = all_hidden_states[layer_idx]  # [batch, seq, hidden]
+                        
+                        # Compute Q, K, V
+                        with torch.no_grad():
+                            Q = layer_attn.query(hidden_state)  # [batch, seq, hidden]
+                            K = layer_attn.key(hidden_state)
+                            V = layer_attn.value(hidden_state)
+                            
+                            # Reshape for multi-head: [batch, seq, num_heads, head_dim]
+                            batch_size = Q.shape[0]
+                            Q_heads = Q.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                            K_heads = K.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                            V_heads = V.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                        
+                        # Get attention weights for this layer
+                        layer_attention = all_attentions[layer_idx] if all_attentions and layer_idx < len(all_attentions) else None
+                        
+                        layer_flow = {
+                            "layer": layer_idx,
+                            "input_shape": list(hidden_state.shape),
+                            "heads": []
+                        }
+                        
+                        for head_idx in range(min(num_attention_heads, 12)):
+                            head_data = {
+                                "head": head_idx,
+                                "Q_shape": [seq_len, head_dim],
+                                "K_shape": [seq_len, head_dim],
+                                "V_shape": [seq_len, head_dim],
+                                # Sample values for first 5 tokens, first 8 dims
+                                "Q_sample": Q_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "K_sample": K_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "V_sample": V_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                # Statistics
+                                "Q_stats": {
+                                    "mean": float(Q_heads[0, head_idx].mean().item()),
+                                    "std": float(Q_heads[0, head_idx].std().item()),
+                                    "min": float(Q_heads[0, head_idx].min().item()),
+                                    "max": float(Q_heads[0, head_idx].max().item())
+                                },
+                                "K_stats": {
+                                    "mean": float(K_heads[0, head_idx].mean().item()),
+                                    "std": float(K_heads[0, head_idx].std().item()),
+                                    "min": float(K_heads[0, head_idx].min().item()),
+                                    "max": float(K_heads[0, head_idx].max().item())
+                                },
+                                "V_stats": {
+                                    "mean": float(V_heads[0, head_idx].mean().item()),
+                                    "std": float(V_heads[0, head_idx].std().item()),
+                                    "min": float(V_heads[0, head_idx].min().item()),
+                                    "max": float(V_heads[0, head_idx].max().item())
+                                },
+                            }
+                            
+                            # Add attention weights for this head
+                            if layer_attention is not None:
+                                head_data["attention_weights"] = layer_attention[0, head_idx, :10, :10].cpu().numpy().tolist()
+                            
+                            layer_flow["heads"].append(head_data)
+                        
+                        # Output hidden state stats
+                        if layer_idx + 1 < len(all_hidden_states):
+                            output_hidden = all_hidden_states[layer_idx + 1]
+                            layer_flow["output_stats"] = {
+                                "mean": float(output_hidden.mean().item()),
+                                "std": float(output_hidden.std().item())
+                            }
+                        
+                        attention_flow.append(layer_flow)
+                        
+                        # Limit to first 6 layers for performance
+                        if layer_idx >= 5:
+                            break
+                
+            elif hasattr(model, 'h'):  # GPT-2 style
+                first_layer = model.h[0]
+                attn = first_layer.attn
+                
+                qkv_info = {
+                    "hidden_size": hidden_size,
+                    "num_heads": num_attention_heads,
+                    "head_dim": head_dim,
+                    "num_layers": num_layers,
+                    "combined_qkv": True,
+                    "c_attn_weight_shape": list(attn.c_attn.weight.shape) if hasattr(attn, 'c_attn') else None,
+                    "qkv_weight_sample": attn.c_attn.weight[:8, :24].detach().cpu().numpy().tolist() if hasattr(attn, 'c_attn') else None,
+                }
+                
+                # Compute actual Q, K, V for GPT-2 style
+                if all_hidden_states:
+                    for layer_idx, layer in enumerate(model.h):
+                        if layer_idx >= len(all_hidden_states) - 1:
+                            break
+                        
+                        hidden_state = all_hidden_states[layer_idx]
+                        layer_attn = layer.attn
+                        
+                        with torch.no_grad():
+                            # GPT-2 combines QKV in c_attn
+                            qkv = layer_attn.c_attn(hidden_state)
+                            Q, K, V = qkv.split(hidden_size, dim=-1)
+                            
+                            batch_size = Q.shape[0]
+                            Q_heads = Q.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                            K_heads = K.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                            V_heads = V.view(batch_size, -1, num_attention_heads, head_dim).transpose(1, 2)
+                        
+                        layer_attention = all_attentions[layer_idx] if all_attentions and layer_idx < len(all_attentions) else None
+                        
+                        layer_flow = {
+                            "layer": layer_idx,
+                            "input_shape": list(hidden_state.shape),
+                            "heads": []
+                        }
+                        
+                        for head_idx in range(min(num_attention_heads, 12)):
+                            head_data = {
+                                "head": head_idx,
+                                "Q_shape": [seq_len, head_dim],
+                                "K_shape": [seq_len, head_dim],
+                                "V_shape": [seq_len, head_dim],
+                                "Q_sample": Q_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "K_sample": K_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "V_sample": V_heads[0, head_idx, :5, :8].detach().cpu().numpy().tolist(),
+                                "Q_stats": {
+                                    "mean": float(Q_heads[0, head_idx].mean().item()),
+                                    "std": float(Q_heads[0, head_idx].std().item()),
+                                    "min": float(Q_heads[0, head_idx].min().item()),
+                                    "max": float(Q_heads[0, head_idx].max().item())
+                                },
+                                "K_stats": {
+                                    "mean": float(K_heads[0, head_idx].mean().item()),
+                                    "std": float(K_heads[0, head_idx].std().item()),
+                                    "min": float(K_heads[0, head_idx].min().item()),
+                                    "max": float(K_heads[0, head_idx].max().item())
+                                },
+                                "V_stats": {
+                                    "mean": float(V_heads[0, head_idx].mean().item()),
+                                    "std": float(V_heads[0, head_idx].std().item()),
+                                    "min": float(V_heads[0, head_idx].min().item()),
+                                    "max": float(V_heads[0, head_idx].max().item())
+                                },
+                            }
+                            
+                            if layer_attention is not None:
+                                head_data["attention_weights"] = layer_attention[0, head_idx, :10, :10].cpu().numpy().tolist()
+                            
+                            layer_flow["heads"].append(head_data)
+                        
+                        if layer_idx + 1 < len(all_hidden_states):
+                            output_hidden = all_hidden_states[layer_idx + 1]
+                            layer_flow["output_stats"] = {
+                                "mean": float(output_hidden.mean().item()),
+                                "std": float(output_hidden.std().item())
+                            }
+                        
+                        attention_flow.append(layer_flow)
+                        
+                        if layer_idx >= 5:
+                            break
+                            
+        except Exception as e:
+            import traceback
+            print(f"Could not extract QKV info: {e}")
+            traceback.print_exc()
+        
         # Extract embeddings (last hidden state)
         embeddings = []
         last_hidden = getattr(outputs, 'last_hidden_state', None)
@@ -1334,7 +1558,10 @@ async def transformer_text_inference(model_id: str, request: TextInferenceReques
             "is_decoder": is_decoder,
             "generation_steps": generation_steps,
             "generated_text": "".join(generated_tokens) if generated_tokens else None,
-            "full_text": request.text + "".join(generated_tokens) if generated_tokens else request.text
+            "full_text": request.text + "".join(generated_tokens) if generated_tokens else request.text,
+            "qkv_info": qkv_info,
+            "attention_flow": attention_flow,
+            "kv_cache_info": kv_cache_info
         }
         
     except Exception as e:
@@ -1427,11 +1654,55 @@ async def transformer_image_inference(model_id: str, file: UploadFile = File(...
         if last_hidden is not None:
             embeddings = last_hidden[0].cpu().numpy().tolist()
         
+        # Extract Q, K, V weight info from ViT model
+        qkv_info = None
+        try:
+            if hasattr(model, 'vit') and hasattr(model.vit, 'encoder'):
+                # ViT model structure
+                first_layer = model.vit.encoder.layer[0]
+                attn = first_layer.attention.attention
+                hidden_size = model.config.hidden_size
+                num_attention_heads = model.config.num_attention_heads
+                head_dim = hidden_size // num_attention_heads
+                
+                qkv_info = {
+                    "hidden_size": hidden_size,
+                    "num_heads": num_attention_heads,
+                    "head_dim": head_dim,
+                    "query_weight_shape": list(attn.query.weight.shape),
+                    "key_weight_shape": list(attn.key.weight.shape),
+                    "value_weight_shape": list(attn.value.weight.shape),
+                    "query_bias": attn.query.bias is not None,
+                    "key_bias": attn.key.bias is not None,
+                    "value_bias": attn.value.bias is not None,
+                    # Sample weights (first 8x8 block for visualization)
+                    "query_weight_sample": attn.query.weight[:8, :8].detach().cpu().numpy().tolist(),
+                    "key_weight_sample": attn.key.weight[:8, :8].detach().cpu().numpy().tolist(),
+                    "value_weight_sample": attn.value.weight[:8, :8].detach().cpu().numpy().tolist(),
+                }
+            elif hasattr(model, 'encoder') and hasattr(model.encoder, 'layers'):
+                # Alternative ViT structure
+                first_layer = model.encoder.layers[0]
+                if hasattr(first_layer, 'self_attn'):
+                    attn = first_layer.self_attn
+                    hidden_size = model.config.hidden_size
+                    num_attention_heads = model.config.num_attention_heads
+                    head_dim = hidden_size // num_attention_heads
+                    
+                    qkv_info = {
+                        "hidden_size": hidden_size,
+                        "num_heads": num_attention_heads,
+                        "head_dim": head_dim,
+                    }
+        except Exception as e:
+            print(f"Could not extract QKV info for image model: {e}")
+        
         return {
             "predictions": predictions,
             "attention_layers": attention_layers,
             "embeddings": embeddings,
-            "input_tokens": ["[CLS]"] + [f"Patch {i}" for i in range(196)]  # Standard ViT has 196 patches
+            "input_tokens": ["[CLS]"] + [f"Patch {i}" for i in range(196)],  # Standard ViT has 196 patches
+            "qkv_info": qkv_info
         }
         
     except Exception as e:

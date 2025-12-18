@@ -28,6 +28,61 @@ interface GenerationStep {
   logits_stats: { min: number; max: number; mean: number }
 }
 
+interface QKVInfo {
+  hidden_size: number
+  num_heads: number
+  head_dim: number
+  num_layers?: number
+  query_weight_shape?: number[]
+  key_weight_shape?: number[]
+  value_weight_shape?: number[]
+  query_bias?: boolean
+  key_bias?: boolean
+  value_bias?: boolean
+  query_weight_sample?: number[][]
+  key_weight_sample?: number[][]
+  value_weight_sample?: number[][]
+  combined_qkv?: boolean
+  c_attn_weight_shape?: number[]
+  qkv_weight_sample?: number[][]
+}
+
+interface QKVStats {
+  mean: number
+  std: number
+  min: number
+  max: number
+}
+
+interface HeadFlowData {
+  head: number
+  Q_shape: number[]
+  K_shape: number[]
+  V_shape: number[]
+  Q_sample: number[][]
+  K_sample: number[][]
+  V_sample: number[][]
+  Q_stats: QKVStats
+  K_stats: QKVStats
+  V_stats: QKVStats
+  attention_weights?: number[][]
+}
+
+interface LayerFlowData {
+  layer: number
+  input_shape: number[]
+  heads: HeadFlowData[]
+  output_stats?: { mean: number; std: number }
+}
+
+interface KVCacheInfo {
+  enabled: boolean
+  shape: { keys: number[]; values: number[] }
+  size_per_token_bytes: number
+  total_size_bytes: number
+  total_size_mb: number
+}
+
 interface TransformerOutput {
   input_tokens?: string[]
   output_tokens?: string[]
@@ -39,6 +94,9 @@ interface TransformerOutput {
   generation_steps?: GenerationStep[]
   generated_text?: string
   full_text?: string
+  qkv_info?: QKVInfo
+  attention_flow?: LayerFlowData[]
+  kv_cache_info?: KVCacheInfo
 }
 
 function TransformerWorkspace({ modelId, modelName, transformerType, imageFile, onImageUpload }: TransformerWorkspaceProps) {
@@ -53,6 +111,9 @@ function TransformerWorkspace({ modelId, modelName, transformerType, imageFile, 
   const [generateTokens, setGenerateTokens] = useState(5)
   const [selectedStep, setSelectedStep] = useState(0)
   const [selectedCell, setSelectedCell] = useState<{row: number, col: number, from: string, to: string, weight: number} | null>(null)
+  const [flowExpandedLayer, setFlowExpandedLayer] = useState<number | null>(0)
+  const [flowSelectedHead, setFlowSelectedHead] = useState<number>(0)
+  const [showFlowView, setShowFlowView] = useState(false)
 
   const isDecoderModel = modelName.includes('gpt')
 
@@ -715,6 +776,418 @@ function TransformerWorkspace({ modelId, modelName, transformerType, imageFile, 
                   </div>
                 )}
 
+                {/* QKV Weights Visualization */}
+                {output?.qkv_info && (
+                  <div className="qkv-visualization">
+                    <h4>🔑 Query, Key, Value (Q, K, V) Projection Weights</h4>
+                    <p className="qkv-intro">
+                      Each token's embedding ({output.qkv_info.hidden_size} dims) is transformed into Q, K, V vectors using learned weight matrices.
+                      With {output.qkv_info.num_heads} attention heads, each head works with {output.qkv_info.head_dim}-dimensional vectors.
+                    </p>
+                    
+                    <div className="qkv-pipeline">
+                      {/* Input Embedding */}
+                      <div className="qkv-block input-block">
+                        <div className="block-label">Token Embedding</div>
+                        <div className="vector-viz">
+                          {Array.from({ length: 16 }).map((_, i) => (
+                            <div key={i} className="vec-cell" style={{
+                              background: `hsl(200, 70%, ${40 + Math.sin(i * 0.5) * 20}%)`
+                            }} />
+                          ))}
+                          <span className="ellipsis">···</span>
+                        </div>
+                        <div className="dim-info">{output.qkv_info.hidden_size} dims</div>
+                      </div>
+
+                      <div className="qkv-arrows">
+                        <div className="arrow-branch q">W<sub>Q</sub> →</div>
+                        <div className="arrow-branch k">W<sub>K</sub> →</div>
+                        <div className="arrow-branch v">W<sub>V</sub> →</div>
+                      </div>
+
+                      {/* Q, K, V Weight Matrices */}
+                      <div className="qkv-matrices">
+                        <div className="matrix-block query">
+                          <div className="block-label">Query (Q)</div>
+                          <div className="weight-matrix">
+                            {output.qkv_info.query_weight_sample?.slice(0, 6).map((row, i) => (
+                              <div key={i} className="weight-row">
+                                {row.slice(0, 6).map((val, j) => (
+                                  <div 
+                                    key={j} 
+                                    className="weight-cell"
+                                    style={{
+                                      background: val > 0 
+                                        ? `rgba(99, 102, 241, ${Math.min(Math.abs(val) * 5, 1)})`
+                                        : `rgba(239, 68, 68, ${Math.min(Math.abs(val) * 5, 1)})`
+                                    }}
+                                    title={val.toFixed(4)}
+                                  />
+                                ))}
+                              </div>
+                            )) || Array.from({ length: 6 }).map((_, i) => (
+                              <div key={i} className="weight-row">
+                                {Array.from({ length: 6 }).map((_, j) => (
+                                  <div key={j} className="weight-cell placeholder" />
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="matrix-dims">
+                            {output.qkv_info.query_weight_shape?.join(' × ') || `${output.qkv_info.hidden_size} × ${output.qkv_info.hidden_size}`}
+                          </div>
+                          <div className="matrix-desc">"What am I looking for?"</div>
+                        </div>
+
+                        <div className="matrix-block key">
+                          <div className="block-label">Key (K)</div>
+                          <div className="weight-matrix">
+                            {output.qkv_info.key_weight_sample?.slice(0, 6).map((row, i) => (
+                              <div key={i} className="weight-row">
+                                {row.slice(0, 6).map((val, j) => (
+                                  <div 
+                                    key={j} 
+                                    className="weight-cell"
+                                    style={{
+                                      background: val > 0 
+                                        ? `rgba(34, 197, 94, ${Math.min(Math.abs(val) * 5, 1)})`
+                                        : `rgba(239, 68, 68, ${Math.min(Math.abs(val) * 5, 1)})`
+                                    }}
+                                    title={val.toFixed(4)}
+                                  />
+                                ))}
+                              </div>
+                            )) || Array.from({ length: 6 }).map((_, i) => (
+                              <div key={i} className="weight-row">
+                                {Array.from({ length: 6 }).map((_, j) => (
+                                  <div key={j} className="weight-cell placeholder" />
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="matrix-dims">
+                            {output.qkv_info.key_weight_shape?.join(' × ') || `${output.qkv_info.hidden_size} × ${output.qkv_info.hidden_size}`}
+                          </div>
+                          <div className="matrix-desc">"What do I contain?"</div>
+                        </div>
+
+                        <div className="matrix-block value">
+                          <div className="block-label">Value (V)</div>
+                          <div className="weight-matrix">
+                            {output.qkv_info.value_weight_sample?.slice(0, 6).map((row, i) => (
+                              <div key={i} className="weight-row">
+                                {row.slice(0, 6).map((val, j) => (
+                                  <div 
+                                    key={j} 
+                                    className="weight-cell"
+                                    style={{
+                                      background: val > 0 
+                                        ? `rgba(251, 191, 36, ${Math.min(Math.abs(val) * 5, 1)})`
+                                        : `rgba(239, 68, 68, ${Math.min(Math.abs(val) * 5, 1)})`
+                                    }}
+                                    title={val.toFixed(4)}
+                                  />
+                                ))}
+                              </div>
+                            )) || Array.from({ length: 6 }).map((_, i) => (
+                              <div key={i} className="weight-row">
+                                {Array.from({ length: 6 }).map((_, j) => (
+                                  <div key={j} className="weight-cell placeholder" />
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="matrix-dims">
+                            {output.qkv_info.value_weight_shape?.join(' × ') || `${output.qkv_info.hidden_size} × ${output.qkv_info.hidden_size}`}
+                          </div>
+                          <div className="matrix-desc">"What info do I pass?"</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="qkv-formula">
+                      <div className="formula-box">
+                        <code>Q = X × W<sub>Q</sub></code>
+                        <code>K = X × W<sub>K</sub></code>
+                        <code>V = X × W<sub>V</sub></code>
+                      </div>
+                      <div className="formula-explanation">
+                        <p><strong>Attention Score:</strong> softmax(Q × K<sup>T</sup> / √{output.qkv_info.head_dim})</p>
+                        <p><strong>Output:</strong> Attention Score × V</p>
+                      </div>
+                    </div>
+
+                    <div className="qkv-stats">
+                      <div className="stat-item">
+                        <span className="stat-label">Hidden Size</span>
+                        <span className="stat-value">{output.qkv_info.hidden_size}</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="stat-label">Attention Heads</span>
+                        <span className="stat-value">{output.qkv_info.num_heads}</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="stat-label">Head Dimension</span>
+                        <span className="stat-value">{output.qkv_info.head_dim}</span>
+                      </div>
+                      <div className="stat-item">
+                        <span className="stat-label">Q/K/V Params</span>
+                        <span className="stat-value">{(output.qkv_info.hidden_size * output.qkv_info.hidden_size * 3).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* KV Cache Info */}
+                {output?.kv_cache_info && (
+                  <div className="kv-cache-section">
+                    <h4>💾 KV Cache Details</h4>
+                    <p className="kv-intro">
+                      The KV Cache stores computed Key and Value vectors to avoid recomputation during autoregressive generation.
+                    </p>
+                    <div className="kv-cache-stats">
+                      <div className="cache-stat">
+                        <span className="cache-label">Keys Shape</span>
+                        <span className="cache-value">[{output.kv_cache_info.shape.keys.join(' × ')}]</span>
+                      </div>
+                      <div className="cache-stat">
+                        <span className="cache-label">Values Shape</span>
+                        <span className="cache-value">[{output.kv_cache_info.shape.values.join(' × ')}]</span>
+                      </div>
+                      <div className="cache-stat">
+                        <span className="cache-label">Per Token</span>
+                        <span className="cache-value">{(output.kv_cache_info.size_per_token_bytes / 1024).toFixed(2)} KB</span>
+                      </div>
+                      <div className="cache-stat">
+                        <span className="cache-label">Total Size</span>
+                        <span className="cache-value">{output.kv_cache_info.total_size_mb.toFixed(3)} MB</span>
+                      </div>
+                    </div>
+                    <div className="cache-visual">
+                      <div className="cache-bar keys">
+                        <span className="bar-label">K</span>
+                        <div className="bar-fill" />
+                      </div>
+                      <div className="cache-bar values">
+                        <span className="bar-label">V</span>
+                        <div className="bar-fill" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Attention Flow Visualization */}
+                {output?.attention_flow && output.attention_flow.length > 0 && (
+                  <div className="attention-flow-section">
+                    <div className="flow-header">
+                      <h4>🔄 Layer-by-Layer Attention Flow</h4>
+                      <button 
+                        className={`flow-toggle ${showFlowView ? 'active' : ''}`}
+                        onClick={() => setShowFlowView(!showFlowView)}
+                      >
+                        {showFlowView ? '📊 Hide Flow' : '📊 Show Flow'}
+                      </button>
+                    </div>
+                    
+                    {showFlowView && (
+                      <div className="flow-visualization">
+                        <div className="flow-timeline">
+                          {output.attention_flow.map((layerData, idx) => (
+                            <div 
+                              key={idx} 
+                              className={`flow-layer ${flowExpandedLayer === idx ? 'expanded' : ''}`}
+                            >
+                              <div 
+                                className="layer-header-flow"
+                                onClick={() => setFlowExpandedLayer(flowExpandedLayer === idx ? null : idx)}
+                              >
+                                <span className="layer-num">Layer {layerData.layer + 1}</span>
+                                <span className="layer-shape">Input: [{layerData.input_shape.slice(1).join(' × ')}]</span>
+                                {layerData.output_stats && (
+                                  <span className="layer-output-stat">
+                                    μ: {layerData.output_stats.mean.toFixed(4)}
+                                  </span>
+                                )}
+                                <span className="expand-icon">{flowExpandedLayer === idx ? '▼' : '▶'}</span>
+                              </div>
+                              
+                              {flowExpandedLayer === idx && (
+                                <div className="layer-details-flow">
+                                  <div className="heads-selector">
+                                    {layerData.heads.map((head, hIdx) => (
+                                      <button
+                                        key={hIdx}
+                                        className={`head-btn ${flowSelectedHead === hIdx ? 'active' : ''}`}
+                                        onClick={() => setFlowSelectedHead(hIdx)}
+                                      >
+                                        H{hIdx + 1}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  
+                                  {layerData.heads[flowSelectedHead] && (
+                                    <div className="head-qkv-details">
+                                      <div className="qkv-value-cards">
+                                        <div className="value-card query">
+                                          <div className="card-header">
+                                            <span className="card-title">Query (Q)</span>
+                                            <span className="card-shape">[{layerData.heads[flowSelectedHead].Q_shape.join(' × ')}]</span>
+                                          </div>
+                                          <div className="card-stats">
+                                            <span>μ: {layerData.heads[flowSelectedHead].Q_stats.mean.toFixed(4)}</span>
+                                            <span>σ: {layerData.heads[flowSelectedHead].Q_stats.std.toFixed(4)}</span>
+                                            <span>range: [{layerData.heads[flowSelectedHead].Q_stats.min.toFixed(2)}, {layerData.heads[flowSelectedHead].Q_stats.max.toFixed(2)}]</span>
+                                          </div>
+                                          <div className="value-scroll">
+                                            <table className="value-table">
+                                              <thead>
+                                                <tr>
+                                                  <th>Token</th>
+                                                  {layerData.heads[flowSelectedHead].Q_sample[0]?.map((_, i) => (
+                                                    <th key={i}>d{i}</th>
+                                                  ))}
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {layerData.heads[flowSelectedHead].Q_sample.map((row, i) => (
+                                                  <tr key={i}>
+                                                    <td className="token-idx">{output.input_tokens?.[i] || `t${i}`}</td>
+                                                    {row.map((val, j) => (
+                                                      <td 
+                                                        key={j}
+                                                        className={val > 0 ? 'positive' : 'negative'}
+                                                        title={val.toFixed(6)}
+                                                      >
+                                                        {val.toFixed(3)}
+                                                      </td>
+                                                    ))}
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+
+                                        <div className="value-card key">
+                                          <div className="card-header">
+                                            <span className="card-title">Key (K)</span>
+                                            <span className="card-shape">[{layerData.heads[flowSelectedHead].K_shape.join(' × ')}]</span>
+                                          </div>
+                                          <div className="card-stats">
+                                            <span>μ: {layerData.heads[flowSelectedHead].K_stats.mean.toFixed(4)}</span>
+                                            <span>σ: {layerData.heads[flowSelectedHead].K_stats.std.toFixed(4)}</span>
+                                            <span>range: [{layerData.heads[flowSelectedHead].K_stats.min.toFixed(2)}, {layerData.heads[flowSelectedHead].K_stats.max.toFixed(2)}]</span>
+                                          </div>
+                                          <div className="value-scroll">
+                                            <table className="value-table">
+                                              <thead>
+                                                <tr>
+                                                  <th>Token</th>
+                                                  {layerData.heads[flowSelectedHead].K_sample[0]?.map((_, i) => (
+                                                    <th key={i}>d{i}</th>
+                                                  ))}
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {layerData.heads[flowSelectedHead].K_sample.map((row, i) => (
+                                                  <tr key={i}>
+                                                    <td className="token-idx">{output.input_tokens?.[i] || `t${i}`}</td>
+                                                    {row.map((val, j) => (
+                                                      <td 
+                                                        key={j}
+                                                        className={val > 0 ? 'positive' : 'negative'}
+                                                        title={val.toFixed(6)}
+                                                      >
+                                                        {val.toFixed(3)}
+                                                      </td>
+                                                    ))}
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+
+                                        <div className="value-card value">
+                                          <div className="card-header">
+                                            <span className="card-title">Value (V)</span>
+                                            <span className="card-shape">[{layerData.heads[flowSelectedHead].V_shape.join(' × ')}]</span>
+                                          </div>
+                                          <div className="card-stats">
+                                            <span>μ: {layerData.heads[flowSelectedHead].V_stats.mean.toFixed(4)}</span>
+                                            <span>σ: {layerData.heads[flowSelectedHead].V_stats.std.toFixed(4)}</span>
+                                            <span>range: [{layerData.heads[flowSelectedHead].V_stats.min.toFixed(2)}, {layerData.heads[flowSelectedHead].V_stats.max.toFixed(2)}]</span>
+                                          </div>
+                                          <div className="value-scroll">
+                                            <table className="value-table">
+                                              <thead>
+                                                <tr>
+                                                  <th>Token</th>
+                                                  {layerData.heads[flowSelectedHead].V_sample[0]?.map((_, i) => (
+                                                    <th key={i}>d{i}</th>
+                                                  ))}
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {layerData.heads[flowSelectedHead].V_sample.map((row, i) => (
+                                                  <tr key={i}>
+                                                    <td className="token-idx">{output.input_tokens?.[i] || `t${i}`}</td>
+                                                    {row.map((val, j) => (
+                                                      <td 
+                                                        key={j}
+                                                        className={val > 0 ? 'positive' : 'negative'}
+                                                        title={val.toFixed(6)}
+                                                      >
+                                                        {val.toFixed(3)}
+                                                      </td>
+                                                    ))}
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {layerData.heads[flowSelectedHead].attention_weights && (
+                                        <div className="mini-attention-matrix">
+                                          <h5>Attention Weights (Q × K<sup>T</sup> / √d<sub>k</sub>)</h5>
+                                          <div className="mini-matrix">
+                                            {layerData.heads[flowSelectedHead].attention_weights.slice(0, 8).map((row, i) => (
+                                              <div key={i} className="mini-row">
+                                                {row.slice(0, 8).map((val, j) => (
+                                                  <div 
+                                                    key={j}
+                                                    className="mini-cell"
+                                                    style={{ background: `rgba(67, 233, 123, ${val})` }}
+                                                    title={`${(val * 100).toFixed(1)}%`}
+                                                  />
+                                                ))}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              
+                              {idx < output.attention_flow.length - 1 && (
+                                <div className="flow-connector">
+                                  <div className="connector-line" />
+                                  <span className="connector-label">→ Next Layer</span>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="attention-controls">
                   <div className="control-group">
                     <label>Layer:</label>
@@ -757,15 +1230,7 @@ function TransformerWorkspace({ modelId, modelName, transformerType, imageFile, 
                       </div>
                     </div>
                     
-                    <div className="matrix-with-annotations">
-                      <div className="row-label-annotation">
-                        <span>← Token asking "what should I attend to?"</span>
-                      </div>
-                      {renderAttentionMatrix()}
-                      <div className="col-label-annotation">
-                        <span>↑ Tokens being attended to</span>
-                      </div>
-                    </div>
+                    {renderAttentionMatrix()}
 
                     <div className="attention-insights">
                       <h5>🔍 Pattern Analysis</h5>
