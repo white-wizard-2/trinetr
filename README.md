@@ -2,7 +2,9 @@
 
 An interactive visualization platform for understanding deep learning models - from CNNs to Transformers.
 
-> *Trinetr (त्रिनेत्र)* - The third eye that sees beyond the surface, into the inner workings of neural networks.
+> *Trinetr (त्रिनेत्र)* - The third eye that sees beyond the surface
+
+> [Join our Discord community](https://discord.gg/y38UP9Q6A)
 
 ## What is this?
 
