@@ -8,6 +8,33 @@ An interactive visualization platform for understanding deep learning models - f
 
 A tool to visualize and understand how neural networks work internally. Watch data flow through layers, see attention patterns, explore embeddings, and understand what your model is actually learning.
 
+## Screenshots
+
+### CNN Workspace
+Full CNN visualization with model architecture, image preprocessing, activation maps, and predictions.
+
+![CNN Workspace](images/cnn.png)
+
+### Feature Maps
+Explore all 64 channels of a convolutional layer to see what features the network detects.
+
+![Feature Maps](images/feature_maps.png)
+
+### Transformer - Text Generation
+Step-by-step token generation with GPT-2, showing the complete data flow and generation process.
+
+![Transformer Generation](images/transformers.png)
+
+### Self-Attention Explained
+Understand how self-attention works with Q, K, V vectors and attention score computation.
+
+![Attention Explanation](images/attention1.png)
+
+### Layer-by-Layer Attention Flow
+Deep dive into attention with KV cache details, actual Q/K/V values, and per-head attention weights.
+
+![Attention Flow](images/attention2.png)
+
 ## Features
 
 ### 🖼️ CNN Visualization
