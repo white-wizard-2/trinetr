@@ -9,9 +9,11 @@ import TransformerLoader from './components/TransformerLoader'
 import TransformerWorkspace from './components/TransformerWorkspace'
 import DiffusionLoader from './components/DiffusionLoader'
 import DiffusionWorkspace from './components/DiffusionWorkspace'
+import StateSpaceLoader from './components/StateSpaceLoader'
+import StateSpaceWorkspace from './components/StateSpaceWorkspace'
 import './App.css'
 
-type ModelType = 'cnn' | 'transformer' | 'diffusion'
+type ModelType = 'cnn' | 'transformer' | 'diffusion' | 'state-space'
 
 function App() {
   const [modelType, setModelType] = useState<ModelType>('cnn')
@@ -27,6 +29,10 @@ function App() {
   // Diffusion state
   const [diffusionModelId, setDiffusionModelId] = useState<string | null>(null)
   const [diffusionModelName, setDiffusionModelName] = useState<string>('stable-diffusion-v1-4')
+  
+  // State space state
+  const [stateSpaceModelId, setStateSpaceModelId] = useState<string | null>(null)
+  const [stateSpaceModelName, setStateSpaceModelName] = useState<string>('mamba-130m')
 
   // Load default image on mount
   useEffect(() => {
@@ -49,6 +55,7 @@ function App() {
     setModelId(null)
     setTransformerModelId(null)
     setDiffusionModelId(null)
+    setStateSpaceModelId(null)
     setSelectedLayer(null)
   }
 
@@ -79,6 +86,12 @@ function App() {
             >
               🎨 Diffusion
             </button>
+            <button 
+              className={`type-btn ${modelType === 'state-space' ? 'active' : ''}`}
+              onClick={() => handleModelTypeChange('state-space')}
+            >
+              ⚡ State Space
+            </button>
           </div>
           <div className="header-divider" />
           {modelType === 'cnn' ? (
@@ -96,11 +109,18 @@ function App() {
               onTypeChange={setTransformerType}
               transformerType={transformerType}
             />
-          ) : (
+          ) : modelType === 'diffusion' ? (
             <DiffusionLoader 
               onModelLoaded={(id, name) => {
                 setDiffusionModelId(id)
                 setDiffusionModelName(name)
+              }}
+            />
+          ) : (
+            <StateSpaceLoader 
+              onModelLoaded={(id, name) => {
+                setStateSpaceModelId(id)
+                setStateSpaceModelName(name)
               }}
             />
           )}
@@ -170,10 +190,15 @@ function App() {
             imageFile={imageFile}
             onImageUpload={setImageFile}
           />
-        ) : (
+        ) : modelType === 'diffusion' ? (
           <DiffusionWorkspace 
             modelId={diffusionModelId}
             modelName={diffusionModelName}
+          />
+        ) : (
+          <StateSpaceWorkspace 
+            modelId={stateSpaceModelId}
+            modelName={stateSpaceModelName}
           />
         )}
       </main>

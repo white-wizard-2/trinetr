@@ -76,6 +76,22 @@ Deep dive into attention with KV cache details, actual Q/K/V values, and per-hea
   - Classifier-free guidance mechanism
 - **Supported Models**: Stable Diffusion v1.4, v1.5, v2.1
 
+### ⚡ State Space Model Visualization
+- **Efficient Sequence Processing**: Mamba models with linear O(n) complexity
+- **State Space Equations**: Understand how continuous-time equations process sequences
+- **Selective State Spaces**: Learn how Mamba's selective mechanism works
+- **Interactive Inference**:
+  - Run text inference and see predictions
+  - View hidden states at each layer
+  - Monitor state evolution through the model
+- **Educational Explanations**:
+  - State space equations (dx/dt = Ax + Bu)
+  - Linear vs quadratic complexity comparison
+  - Selective state spaces (Mamba's innovation)
+  - How state space models differ from transformers
+- **Supported Models**: Mamba 130M, 370M, 790M
+- **Note**: State space models may require `mamba-ssm` package which has complex build requirements (CUDA/nvcc). The UI will work for visualization even if models can't be loaded - you can still learn the concepts!
+
 ## Architecture
 
 ```
@@ -157,6 +173,12 @@ npm run dev
 - **Generate Tab**: Create images from text prompts with adjustable parameters
 - **Process Tab**: View step-by-step denoising with intermediate images and latent statistics
 - **Architecture Tab**: Explore U-Net, VAE, and text encoder components
+
+### State Space Mode
+- **How It Works Tab**: Detailed explanation of state space models, equations, and selective mechanisms
+- **Inference Tab**: Run text inference and see top predictions with probabilities
+- **Hidden States Tab**: Explore hidden states at each layer with statistics and sample values
+- **Architecture Tab**: View state space block structure and model components
 
 ## Requirements
 

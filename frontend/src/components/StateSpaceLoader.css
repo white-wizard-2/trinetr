@@ -1,0 +1,97 @@
+.state-space-loader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.state-space-loader select {
+  padding: 0.5rem 1rem;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.state-space-loader select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.state-space-loader .load-btn {
+  padding: 0.5rem 1rem;
+  background: #22c55e;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.state-space-loader .load-btn:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.state-space-loader .load-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.state-space-loader .info-btn {
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 0.5rem;
+  color: #888;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.state-space-loader .info-btn:hover {
+  border-color: #666;
+  color: #fff;
+}
+
+.error-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: #ef4444;
+  color: white;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  z-index: 1000;
+}
+
+.model-info-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  min-width: 200px;
+  z-index: 1000;
+}
+
+.model-info-tooltip strong {
+  display: block;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.model-info-tooltip p {
+  color: #888;
+  margin: 0;
+}
+

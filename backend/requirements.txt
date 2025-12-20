@@ -12,4 +12,5 @@ passlib[bcrypt]==1.7.4
 transformers>=4.35.0
 diffusers>=0.21.0
 accelerate>=0.24.0
+# mamba-ssm>=1.2.0  # Optional: Requires CUDA and complex build setup. Install separately if needed.
 

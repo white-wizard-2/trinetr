@@ -2023,6 +2023,248 @@ async def get_diffusion_architecture(model_id: str):
                        sum(p.numel() for p in pipe.text_encoder.parameters())
     }
 
+# ============== STATE SPACE MODELS ==============
+
+# Storage for state space models
+loaded_state_space_models = {}
+
+# State space model configurations
+STATE_SPACE_MODELS = {
+    'mamba-130m': {
+        'hf_name': 'state-spaces/mamba-130m',
+        'description': 'Mamba 130M - Efficient state space model for sequences',
+        'd_model': 768,
+        'n_layers': 24
+    },
+    'mamba-370m': {
+        'hf_name': 'state-spaces/mamba-370m',
+        'description': 'Mamba 370M - Medium-sized state space model',
+        'd_model': 1024,
+        'n_layers': 48
+    },
+    'mamba-790m': {
+        'hf_name': 'state-spaces/mamba-790m',
+        'description': 'Mamba 790M - Large state space model',
+        'd_model': 1536,
+        'n_layers': 48
+    },
+}
+
+class StateSpaceInferenceRequest(BaseModel):
+    text: str
+    max_length: int = 100
+    return_states: bool = True  # Return intermediate states for visualization
+
+@app.post("/state-space/load")
+async def load_state_space_model(model_name: str):
+    """Load a state space model (Mamba)"""
+    try:
+        from transformers import AutoTokenizer, AutoModelForCausalLM
+        import torch
+        
+        if model_name not in STATE_SPACE_MODELS:
+            raise HTTPException(status_code=400, detail=f"Unknown model: {model_name}")
+        
+        config = STATE_SPACE_MODELS[model_name]
+        hf_name = config['hf_name']
+        
+        model_id = f"{model_name}_{len(loaded_state_space_models)}"
+        
+        # Try to load from HuggingFace - many Mamba models are available there
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(hf_name, trust_remote_code=True)
+            if tokenizer.pad_token is None:
+                tokenizer.pad_token = tokenizer.eos_token
+            
+            # Try loading the model
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    hf_name,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True
+                )
+                model.eval()
+            except Exception as model_error:
+                # If model loading fails, provide helpful error message
+                error_msg = str(model_error)
+                if "mamba" in error_msg.lower() or "state" in error_msg.lower():
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"State space model loading requires additional setup. "
+                               f"Note: mamba-ssm package may require CUDA and complex build setup. "
+                               f"Error: {error_msg}. "
+                               f"For Mac/CPU, you may need to use alternative implementations or pre-built wheels."
+                    )
+                else:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to load model: {error_msg}"
+                    )
+            
+            loaded_state_space_models[model_id] = {
+                'model': model,
+                'tokenizer': tokenizer,
+                'model_name': model_name,
+                'config': config
+            }
+            
+            return {
+                "model_id": model_id,
+                "model_name": model_name,
+                "description": config['description'],
+                "d_model": config['d_model'],
+                "n_layers": config['n_layers']
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            # Provide helpful error message about installation
+            error_msg = str(e)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to load state space model. "
+                       f"State space models (like Mamba) may require the mamba-ssm package, "
+                       f"which has complex build requirements (CUDA, nvcc). "
+                       f"For demonstration purposes, you can use HuggingFace transformers models. "
+                       f"Error: {error_msg}"
+            )
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Required library not found: {str(e)}. Install with: pip install transformers torch"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+
+@app.post("/state-space/{model_id}/infer")
+async def state_space_inference(model_id: str, request: StateSpaceInferenceRequest):
+    """Run inference on a state space model with step-by-step visualization"""
+    if model_id not in loaded_state_space_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    try:
+        import torch
+        
+        model_data = loaded_state_space_models[model_id]
+        model = model_data['model']
+        tokenizer = model_data['tokenizer']
+        
+        # Tokenize input
+        inputs = tokenizer(request.text, return_tensors='pt', padding=True, truncation=True, max_length=512)
+        input_ids = inputs['input_ids']
+        tokens = tokenizer.convert_ids_to_tokens(input_ids[0])
+        
+        # Run inference
+        with torch.no_grad():
+            outputs = model(**inputs, output_hidden_states=request.return_states)
+        
+        # Extract hidden states if available
+        hidden_states = []
+        if hasattr(outputs, 'hidden_states') and outputs.hidden_states:
+            for layer_idx, hidden_state in enumerate(outputs.hidden_states):
+                hidden_states.append({
+                    "layer": layer_idx,
+                    "shape": list(hidden_state.shape),
+                    "mean": float(hidden_state.mean().item()),
+                    "std": float(hidden_state.std().item()),
+                    "min": float(hidden_state.min().item()),
+                    "max": float(hidden_state.max().item()),
+                    "sample": hidden_state[0, -1, :10].cpu().numpy().tolist()  # First 10 dims of last token
+                })
+        
+        # Get logits for next token prediction
+        logits = outputs.logits[0, -1, :]  # Last position, all vocab
+        probs = torch.nn.functional.softmax(logits, dim=-1)
+        top_probs, top_indices = torch.topk(probs, 10)
+        
+        top_predictions = []
+        for prob, idx in zip(top_probs, top_indices):
+            token = tokenizer.decode([idx.item()])
+            top_predictions.append({
+                "token": token,
+                "probability": float(prob.item()),
+                "logit": float(logits[idx].item())
+            })
+        
+        # Get model architecture info
+        architecture_info = {
+            "d_model": model_data['config']['d_model'],
+            "n_layers": model_data['config']['n_layers'],
+            "vocab_size": len(tokenizer),
+            "model_type": "state_space"
+        }
+        
+        # State space specific info
+        state_space_info = {
+            "state_dim": model_data['config']['d_model'],
+            "sequence_length": input_ids.shape[1],
+            "efficient_attention": True,
+            "linear_complexity": True
+        }
+        
+        return {
+            "input_tokens": tokens,
+            "hidden_states": hidden_states,
+            "top_predictions": top_predictions,
+            "architecture_info": architecture_info,
+            "state_space_info": state_space_info,
+            "logits_stats": {
+                "min": float(logits.min().item()),
+                "max": float(logits.max().item()),
+                "mean": float(logits.mean().item()),
+                "std": float(logits.std().item())
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Inference failed: {str(e)}")
+
+@app.get("/state-space/{model_id}/architecture")
+async def get_state_space_architecture(model_id: str):
+    """Get architecture information for a state space model"""
+    if model_id not in loaded_state_space_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model_data = loaded_state_space_models[model_id]
+    model = model_data['model']
+    config = model_data['config']
+    
+    # Try to extract layer information
+    layers = []
+    try:
+        for name, module in model.named_modules():
+            if len(list(module.children())) == 0:  # Leaf module
+                layer_type = type(module).__name__
+                layers.append({
+                    "name": name,
+                    "type": layer_type,
+                    "parameters": sum(p.numel() for p in module.parameters()) if hasattr(module, 'parameters') else 0
+                })
+    except:
+        pass
+    
+    return {
+        "model_name": model_data['model_name'],
+        "components": {
+            "state_space_block": {
+                "type": "Mamba Block",
+                "description": "Core state space block with selective state spaces",
+                "d_model": config['d_model'],
+                "n_layers": config['n_layers']
+            },
+            "ssm": {
+                "type": "State Space Model",
+                "description": "Efficiently processes sequences using state space equations",
+            },
+            "tokenizer": {
+                "type": "Tokenizer",
+                "description": "Converts text to token IDs",
+                "vocab_size": len(model_data['tokenizer'])
+            }
+        },
+        "total_params": sum(p.numel() for p in model.parameters()) if hasattr(model, 'parameters') else 0,
+        "layers": layers[:50]  # Limit to first 50 layers
+    }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
