@@ -1,0 +1,115 @@
+.world-model-loader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.world-model-loader select {
+  padding: 0.5rem 1rem;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.world-model-loader select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.world-model-loader .load-btn {
+  padding: 0.5rem 1rem;
+  background: #22c55e;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.world-model-loader .load-btn:hover:not(:disabled) {
+  background: #16a34a;
+}
+
+.world-model-loader .load-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.world-model-loader .info-btn {
+  background: transparent;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 0.5rem;
+  color: #888;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.world-model-loader .info-btn:hover {
+  border-color: #666;
+  color: #fff;
+}
+
+.error-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #ef4444;
+  color: white;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  white-space: normal;
+  max-width: 300px;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.success-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  background: #22c55e;
+  color: white;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  white-space: normal;
+  max-width: 300px;
+  z-index: 1000;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.model-info-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  min-width: 200px;
+  z-index: 1000;
+}
+
+.model-info-tooltip strong {
+  display: block;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.model-info-tooltip p {
+  color: #888;
+  margin: 0;
+}
+

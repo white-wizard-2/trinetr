@@ -11,9 +11,11 @@ import DiffusionLoader from './components/DiffusionLoader'
 import DiffusionWorkspace from './components/DiffusionWorkspace'
 import StateSpaceLoader from './components/StateSpaceLoader'
 import StateSpaceWorkspace from './components/StateSpaceWorkspace'
+import WorldModelLoader from './components/WorldModelLoader'
+import WorldModelWorkspace from './components/WorldModelWorkspace'
 import './App.css'
 
-type ModelType = 'cnn' | 'transformer' | 'diffusion' | 'state-space'
+type ModelType = 'cnn' | 'transformer' | 'diffusion' | 'state-space' | 'world-model'
 
 function App() {
   const [modelType, setModelType] = useState<ModelType>('cnn')
@@ -33,6 +35,10 @@ function App() {
   // State space state
   const [stateSpaceModelId, setStateSpaceModelId] = useState<string | null>(null)
   const [stateSpaceModelName, setStateSpaceModelName] = useState<string>('mamba-130m')
+  
+  // World model state
+  const [worldModelId, setWorldModelId] = useState<string | null>(null)
+  const [worldModelName, setWorldModelName] = useState<string>('world-model-v1')
 
   // Load default image on mount
   useEffect(() => {
@@ -56,6 +62,7 @@ function App() {
     setTransformerModelId(null)
     setDiffusionModelId(null)
     setStateSpaceModelId(null)
+    setWorldModelId(null)
     setSelectedLayer(null)
   }
 
@@ -92,6 +99,12 @@ function App() {
             >
               ⚡ State Space
             </button>
+            <button 
+              className={`type-btn ${modelType === 'world-model' ? 'active' : ''}`}
+              onClick={() => handleModelTypeChange('world-model')}
+            >
+              🌍 World Model
+            </button>
           </div>
           <div className="header-divider" />
           {modelType === 'cnn' ? (
@@ -116,11 +129,18 @@ function App() {
                 setDiffusionModelName(name)
               }}
             />
-          ) : (
+          ) : modelType === 'state-space' ? (
             <StateSpaceLoader 
               onModelLoaded={(id, name) => {
                 setStateSpaceModelId(id)
                 setStateSpaceModelName(name)
+              }}
+            />
+          ) : (
+            <WorldModelLoader 
+              onModelLoaded={(id, name) => {
+                setWorldModelId(id)
+                setWorldModelName(name)
               }}
             />
           )}
@@ -195,10 +215,15 @@ function App() {
             modelId={diffusionModelId}
             modelName={diffusionModelName}
           />
-        ) : (
+        ) : modelType === 'state-space' ? (
           <StateSpaceWorkspace 
             modelId={stateSpaceModelId}
             modelName={stateSpaceModelName}
+          />
+        ) : (
+          <WorldModelWorkspace 
+            modelId={worldModelId}
+            modelName={worldModelName}
           />
         )}
       </main>

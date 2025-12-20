@@ -2265,6 +2265,497 @@ async def get_state_space_architecture(model_id: str):
         "layers": layers[:50]  # Limit to first 50 layers
     }
 
+# ============== WORLD MODELS ==============
+
+# Storage for world models
+loaded_world_models = {}
+
+# World model configurations
+WORLD_MODELS = {
+    'world-model-v1': {
+        'description': 'World Model v1 - VAE encoder, RNN memory, MLP controller',
+        'latent_dim': 32,
+        'hidden_dim': 256,
+        'action_dim': 3
+    },
+}
+
+class WorldModelEncodeRequest(BaseModel):
+    image: Optional[str] = None  # Base64 encoded image
+    return_reconstruction: bool = True
+
+class WorldModelPredictRequest(BaseModel):
+    latent: Optional[list] = None  # Latent vector
+    action: Optional[list] = None  # Action taken
+    steps: int = 1  # Number of steps to predict ahead
+
+class WorldModelControlRequest(BaseModel):
+    latent: list  # Current latent state
+
+class WorldModelSimulateRequest(BaseModel):
+    initial_image: Optional[str] = None  # Base64 encoded initial observation
+    steps: int = 10  # Number of simulation steps
+    actions: Optional[list] = None  # Optional: provide actions, otherwise use controller
+
+@app.post("/world-models/load")
+async def load_world_model(model_name: str = "world-model-v1"):
+    """Load a world model"""
+    try:
+        import torch
+        import torch.nn as nn
+        
+        if model_name not in WORLD_MODELS:
+            raise HTTPException(status_code=400, detail=f"Unknown model: {model_name}")
+        
+        config = WORLD_MODELS[model_name]
+        model_id = f"{model_name}_{len(loaded_world_models)}"
+        
+        # Create a simplified World Model implementation for demonstration
+        # In practice, you would load a pre-trained model
+        
+        class VisionEncoder(nn.Module):
+            """V: Vision encoder - compresses observations to latent space"""
+            def __init__(self, latent_dim=32):
+                super().__init__()
+                self.encoder = nn.Sequential(
+                    nn.Conv2d(3, 32, 4, 2, 1),
+                    nn.ReLU(),
+                    nn.Conv2d(32, 64, 4, 2, 1),
+                    nn.ReLU(),
+                    nn.Conv2d(64, 128, 4, 2, 1),
+                    nn.ReLU(),
+                    nn.Conv2d(128, 256, 4, 2, 1),
+                    nn.ReLU(),
+                    nn.AdaptiveAvgPool2d(1),
+                    nn.Flatten(),
+                    nn.Linear(256, latent_dim * 2)  # Mean and logvar
+                )
+                self.decoder = nn.Sequential(
+                    nn.Linear(latent_dim, 256),
+                    nn.ReLU(),
+                    nn.Unflatten(1, (256, 1, 1)),
+                    nn.ConvTranspose2d(256, 128, 4, 1, 0),
+                    nn.ReLU(),
+                    nn.ConvTranspose2d(128, 64, 4, 2, 1),
+                    nn.ReLU(),
+                    nn.ConvTranspose2d(64, 32, 4, 2, 1),
+                    nn.ReLU(),
+                    nn.ConvTranspose2d(32, 3, 4, 2, 1),
+                    nn.Sigmoid()
+                )
+            
+            def encode(self, x):
+                h = self.encoder(x)
+                mu, logvar = h.chunk(2, dim=1)
+                return mu, logvar
+            
+            def reparameterize(self, mu, logvar):
+                std = torch.exp(0.5 * logvar)
+                eps = torch.randn_like(std)
+                return mu + eps * std
+            
+            def decode(self, z):
+                return self.decoder(z)
+        
+        class MemoryRNN(nn.Module):
+            """M: Memory - RNN that predicts future latent states"""
+            def __init__(self, latent_dim=32, hidden_dim=256, action_dim=3):
+                super().__init__()
+                self.hidden_dim = hidden_dim
+                self.lstm = nn.LSTM(latent_dim + action_dim, hidden_dim, batch_first=True)
+                self.predictor = nn.Linear(hidden_dim, latent_dim)
+            
+            def forward(self, latent, action, hidden=None):
+                # Concatenate latent and action
+                input_vec = torch.cat([latent, action], dim=-1)
+                # Add sequence dimension if needed
+                if input_vec.dim() == 2:
+                    input_vec = input_vec.unsqueeze(1)
+                lstm_out, hidden = self.lstm(input_vec, hidden)
+                predicted_latent = self.predictor(lstm_out)
+                return predicted_latent, hidden
+        
+        class Controller(nn.Module):
+            """C: Controller - policy network that generates actions from latent states"""
+            def __init__(self, latent_dim=32, hidden_dim=256, action_dim=3):
+                super().__init__()
+                self.policy = nn.Sequential(
+                    nn.Linear(latent_dim, hidden_dim),
+                    nn.ReLU(),
+                    nn.Linear(hidden_dim, hidden_dim),
+                    nn.ReLU(),
+                    nn.Linear(hidden_dim, action_dim),
+                    nn.Tanh()  # Actions typically in [-1, 1]
+                )
+            
+            def forward(self, latent):
+                return self.policy(latent)
+        
+        # Create model components
+        vision = VisionEncoder(config['latent_dim'])
+        memory = MemoryRNN(config['latent_dim'], config['hidden_dim'], config['action_dim'])
+        controller = Controller(config['latent_dim'], config['hidden_dim'], config['action_dim'])
+        
+        # Initialize with better weights for demonstration
+        # Use smaller initialization for more stable outputs
+        for module in [vision, memory]:
+            for param in module.parameters():
+                if param.dim() > 1:
+                    nn.init.xavier_uniform_(param, gain=0.1)  # Smaller gain for more stable outputs
+                else:
+                    nn.init.constant_(param, 0.0)  # Initialize biases to zero
+        
+        # Initialize controller with larger weights to produce more varied actions
+        for name, param in controller.named_parameters():
+            if param.dim() > 1:
+                nn.init.xavier_uniform_(param, gain=1.0)  # Larger gain for more action variation
+            else:
+                nn.init.constant_(param, 0.0)  # Initialize biases to zero
+        
+        # Initialize decoder with better weights to produce more varied outputs
+        # This makes the visualization more interesting even without full training
+        with torch.no_grad():
+            for name, param in vision.decoder.named_parameters():
+                if 'weight' in name and len(param.shape) >= 2:
+                    # Use normal initialization with some variation
+                    nn.init.normal_(param, mean=0.0, std=0.02)
+                elif 'bias' in name:
+                    # Small positive bias for decoder to encourage non-zero outputs
+                    nn.init.constant_(param, 0.01)
+        
+        vision.eval()
+        memory.eval()
+        controller.eval()
+        
+        loaded_world_models[model_id] = {
+            'vision': vision,
+            'memory': memory,
+            'controller': controller,
+            'model_name': model_name,
+            'config': config
+        }
+        
+        return {
+            "model_id": model_id,
+            "model_name": model_name,
+            "description": config['description'],
+            "latent_dim": config['latent_dim'],
+            "hidden_dim": config['hidden_dim'],
+            "action_dim": config['action_dim']
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load world model: {str(e)}")
+
+@app.post("/world-models/{model_id}/encode")
+async def world_model_encode(model_id: str, request: WorldModelEncodeRequest):
+    """Encode observation through V (Vision) component"""
+    if model_id not in loaded_world_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    try:
+        import torch
+        import base64
+        
+        model_data = loaded_world_models[model_id]
+        vision = model_data['vision']
+        
+        # If image provided, decode and process it
+        if request.image:
+            image_data = base64.b64decode(request.image.split(',')[-1])
+            image = Image.open(io.BytesIO(image_data)).convert('RGB')
+            image = image.resize((64, 64))
+            transform = transforms.Compose([
+                transforms.ToTensor()
+            ])
+            image_tensor = transform(image).unsqueeze(0)
+        else:
+            # Generate random image for demonstration
+            image_tensor = torch.rand(1, 3, 64, 64)
+        
+        with torch.no_grad():
+            mu, logvar = vision.encode(image_tensor)
+            latent = vision.reparameterize(mu, logvar)
+            
+            reconstruction = None
+            if request.return_reconstruction:
+                reconstruction = vision.decode(latent)
+                # Normalize reconstruction to [0, 1] range for better visualization
+                # Use percentile-based normalization to handle outliers better
+                recon_tensor = reconstruction[0]
+                recon_flat = recon_tensor.flatten()
+                recon_p5 = torch.quantile(recon_flat, 0.05)
+                recon_p95 = torch.quantile(recon_flat, 0.95)
+                
+                if recon_p95 > recon_p5:
+                    # Normalize using 5th and 95th percentiles to avoid extreme outliers
+                    recon_tensor = (recon_tensor - recon_p5) / (recon_p95 - recon_p5)
+                    recon_tensor = recon_tensor.clamp(0, 1)
+                else:
+                    # If all values are similar, add some contrast
+                    recon_mean = recon_tensor.mean()
+                    recon_tensor = (recon_tensor - recon_mean) * 2.0 + 0.5
+                    recon_tensor = recon_tensor.clamp(0, 1)
+                
+                # Convert to base64
+                recon_img = transforms.ToPILImage()(recon_tensor)
+                buffer = io.BytesIO()
+                recon_img.save(buffer, format='PNG')
+                reconstruction_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            else:
+                reconstruction_b64 = None
+        
+        return {
+            "latent": latent[0].cpu().numpy().tolist(),
+            "mu": mu[0].cpu().numpy().tolist(),
+            "logvar": logvar[0].cpu().numpy().tolist(),
+            "reconstruction": reconstruction_b64,
+            "latent_stats": {
+                "mean": float(latent.mean().item()),
+                "std": float(latent.std().item()),
+                "min": float(latent.min().item()),
+                "max": float(latent.max().item())
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Encoding failed: {str(e)}")
+
+@app.post("/world-models/{model_id}/predict")
+async def world_model_predict(model_id: str, request: WorldModelPredictRequest):
+    """Predict next state through M (Memory) component"""
+    if model_id not in loaded_world_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    try:
+        import torch
+        
+        model_data = loaded_world_models[model_id]
+        memory = model_data['memory']
+        latent_dim = model_data['config']['latent_dim']
+        action_dim = model_data['config']['action_dim']
+        
+        # Prepare inputs
+        if request.latent:
+            latent = torch.tensor(request.latent, dtype=torch.float32).unsqueeze(0)
+        else:
+            latent = torch.randn(1, latent_dim)
+        
+        if request.action:
+            action = torch.tensor(request.action, dtype=torch.float32).unsqueeze(0)
+        else:
+            action = torch.randn(1, action_dim)
+        
+        predictions = []
+        hidden = None
+        
+        with torch.no_grad():
+            for step in range(request.steps):
+                predicted_latent, hidden = memory(latent, action, hidden)
+                predictions.append({
+                    "step": step + 1,
+                    "predicted_latent": predicted_latent[0, 0].cpu().numpy().tolist(),
+                    "stats": {
+                        "mean": float(predicted_latent.mean().item()),
+                        "std": float(predicted_latent.std().item()),
+                        "min": float(predicted_latent.min().item()),
+                        "max": float(predicted_latent.max().item())
+                    }
+                })
+                # Use predicted latent for next step
+                latent = predicted_latent[0, 0].unsqueeze(0)
+        
+        return {
+            "predictions": predictions,
+            "initial_latent": latent[0].cpu().numpy().tolist() if request.latent else None,
+            "action_used": action[0].cpu().numpy().tolist()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+@app.post("/world-models/{model_id}/control")
+async def world_model_control(model_id: str, request: WorldModelControlRequest):
+    """Generate action through C (Controller) component"""
+    if model_id not in loaded_world_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    try:
+        import torch
+        
+        model_data = loaded_world_models[model_id]
+        controller = model_data['controller']
+        
+        latent = torch.tensor(request.latent, dtype=torch.float32).unsqueeze(0)
+        
+        with torch.no_grad():
+            action = controller(latent)
+            # Get action probabilities (softmax over action space)
+            action_probs = torch.softmax(action, dim=-1)
+        
+        return {
+            "action": action[0].cpu().numpy().tolist(),
+            "action_probabilities": action_probs[0].cpu().numpy().tolist(),
+            "action_stats": {
+                "mean": float(action.mean().item()),
+                "std": float(action.std().item()),
+                "min": float(action.min().item()),
+                "max": float(action.max().item())
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Control failed: {str(e)}")
+
+@app.post("/world-models/{model_id}/simulate")
+async def world_model_simulate(model_id: str, request: WorldModelSimulateRequest):
+    """Run full world model simulation showing all components"""
+    if model_id not in loaded_world_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    try:
+        import torch
+        import base64
+        
+        model_data = loaded_world_models[model_id]
+        vision = model_data['vision']
+        memory = model_data['memory']
+        controller = model_data['controller']
+        
+        steps = []
+        hidden = None
+        
+        # Initial observation
+        if request.initial_image:
+            image_data = base64.b64decode(request.initial_image.split(',')[-1])
+            image = Image.open(io.BytesIO(image_data)).convert('RGB')
+            image = image.resize((64, 64))
+            transform = transforms.Compose([transforms.ToTensor()])
+            current_obs = transform(image).unsqueeze(0)
+        else:
+            current_obs = torch.rand(1, 3, 64, 64)
+        
+        with torch.no_grad():
+            for step in range(request.steps):
+                # Store the current observation (input to this step) for visualization
+                # For step 0, this is the initial observation
+                # For step 1+, this is the predicted observation from the previous step
+                # Normalize it for consistent visualization
+                obs_tensor = current_obs[0]
+                obs_flat = obs_tensor.flatten()
+                obs_p5 = torch.quantile(obs_flat, 0.05)
+                obs_p95 = torch.quantile(obs_flat, 0.95)
+                
+                if obs_p95 > obs_p5:
+                    obs_tensor_normalized = (obs_tensor - obs_p5) / (obs_p95 - obs_p5)
+                    obs_tensor_normalized = obs_tensor_normalized.clamp(0, 1)
+                else:
+                    obs_mean = obs_tensor.mean()
+                    obs_tensor_normalized = (obs_tensor - obs_mean) * 2.0 + 0.5
+                    obs_tensor_normalized = obs_tensor_normalized.clamp(0, 1)
+                
+                obs_img = transforms.ToPILImage()(obs_tensor_normalized)
+                obs_buffer = io.BytesIO()
+                obs_img.save(obs_buffer, format='PNG')
+                current_obs_b64 = base64.b64encode(obs_buffer.getvalue()).decode('utf-8')
+                
+                # V: Encode observation
+                mu, logvar = vision.encode(current_obs)
+                latent = vision.reparameterize(mu, logvar)
+                
+                # C: Generate action
+                if request.actions and step < len(request.actions):
+                    action = torch.tensor(request.actions[step], dtype=torch.float32).unsqueeze(0)
+                else:
+                    action = controller(latent)
+                
+                # M: Predict next latent
+                predicted_latent, hidden = memory(latent, action, hidden)
+                
+                # Decode predicted latent to visualize
+                # predicted_latent shape: [batch, seq, latent_dim] = [1, 1, 32]
+                # We need [batch, latent_dim] = [1, 32] for decoder
+                predicted_latent_for_decode = predicted_latent[0, 0].unsqueeze(0)  # [1, 32]
+                predicted_obs = vision.decode(predicted_latent_for_decode)  # [1, 3, 64, 64]
+                
+                # Normalize predicted image to [0, 1] range for better visualization
+                # Use percentile-based normalization to handle outliers better
+                pred_tensor = predicted_obs[0]
+                pred_flat = pred_tensor.flatten()
+                pred_p5 = torch.quantile(pred_flat, 0.05)
+                pred_p95 = torch.quantile(pred_flat, 0.95)
+                
+                if pred_p95 > pred_p5:
+                    # Normalize using 5th and 95th percentiles to avoid extreme outliers
+                    pred_tensor_normalized = (pred_tensor - pred_p5) / (pred_p95 - pred_p5)
+                    pred_tensor_normalized = pred_tensor_normalized.clamp(0, 1)
+                else:
+                    # If all values are similar, add some contrast
+                    pred_mean = pred_tensor.mean()
+                    pred_tensor_normalized = (pred_tensor - pred_mean) * 2.0 + 0.5
+                    pred_tensor_normalized = pred_tensor_normalized.clamp(0, 1)
+                
+                pred_img = transforms.ToPILImage()(pred_tensor_normalized)
+                pred_buffer = io.BytesIO()
+                pred_img.save(pred_buffer, format='PNG')
+                
+                steps.append({
+                    "step": step + 1,
+                    "observation": current_obs_b64,  # This is the input to this step (normalized for display)
+                    "latent": latent[0].cpu().numpy().tolist(),
+                    "action": action[0].cpu().numpy().tolist(),
+                    "predicted_latent": predicted_latent[0, 0].cpu().numpy().tolist(),
+                    "predicted_observation": base64.b64encode(pred_buffer.getvalue()).decode('utf-8')
+                })
+                
+                # Use predicted observation for next step (dreaming)
+                # Use the raw predicted_obs (not normalized) for the next encoding step
+                # The normalization is only for visualization
+                current_obs = predicted_obs  # Keep as [1, 3, 64, 64] for next iteration
+        
+        return {
+            "steps": steps,
+            "total_steps": request.steps
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Simulation failed: {str(e)}")
+
+@app.get("/world-models/{model_id}/architecture")
+async def get_world_model_architecture(model_id: str):
+    """Get architecture information for a world model"""
+    if model_id not in loaded_world_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model_data = loaded_world_models[model_id]
+    config = model_data['config']
+    vision = model_data['vision']
+    memory = model_data['memory']
+    controller = model_data['controller']
+    
+    return {
+        "model_name": model_data['model_name'],
+        "components": {
+            "vision": {
+                "type": "VAE Encoder-Decoder",
+                "description": "V: Compresses observations to latent space and can reconstruct them",
+                "latent_dim": config['latent_dim'],
+                "encoder_params": sum(p.numel() for p in vision.encoder.parameters()),
+                "decoder_params": sum(p.numel() for p in vision.decoder.parameters())
+            },
+            "memory": {
+                "type": "LSTM RNN",
+                "description": "M: Predicts future latent states given current state and action",
+                "hidden_dim": config['hidden_dim'],
+                "params": sum(p.numel() for p in memory.parameters())
+            },
+            "controller": {
+                "type": "MLP Policy Network",
+                "description": "C: Generates actions from latent states",
+                "action_dim": config['action_dim'],
+                "params": sum(p.numel() for p in controller.parameters())
+            }
+        },
+        "total_params": sum(p.numel() for p in vision.parameters()) + 
+                       sum(p.numel() for p in memory.parameters()) + 
+                       sum(p.numel() for p in controller.parameters())
+    }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 

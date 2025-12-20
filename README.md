@@ -92,6 +92,24 @@ Deep dive into attention with KV cache details, actual Q/K/V values, and per-hea
 - **Supported Models**: Mamba 130M, 370M, 790M
 - **Note**: State space models may require `mamba-ssm` package which has complex build requirements (CUDA/nvcc). The UI will work for visualization even if models can't be loaded - you can still learn the concepts!
 
+### 🌍 World Model Visualization
+- **Model-Based Reinforcement Learning**: Learn how agents "dream" and plan in latent space
+- **Three Components**: 
+  - **V (Vision)**: VAE encoder that compresses observations to latent space
+  - **M (Memory)**: RNN that predicts future latent states
+  - **C (Controller)**: Policy network that generates actions from latent states
+- **Interactive Components**:
+  - **Vision Tab**: Encode observations, view latent representations, see reconstructions
+  - **Memory Tab**: Predict future states, visualize RNN hidden states over time
+  - **Controller Tab**: Generate actions, view action probabilities
+  - **Simulation Tab**: Run full pipeline showing how agents "dream" multiple steps ahead
+- **Educational Explanations**:
+  - How World Models learn compressed representations
+  - The separation of perception (V), prediction (M), and control (C)
+  - How agents can plan without environment interactions
+  - Advantages of model-based RL
+- **Supported Models**: World Model v1 (VAE + RNN + MLP)
+
 ## Architecture
 
 ```
@@ -179,6 +197,13 @@ npm run dev
 - **Inference Tab**: Run text inference and see top predictions with probabilities
 - **Hidden States Tab**: Explore hidden states at each layer with statistics and sample values
 - **Architecture Tab**: View state space block structure and model components
+
+### World Model Mode
+- **How It Works Tab**: Comprehensive explanation of World Models, V/M/C components, and the "dreaming" process
+- **Vision (V) Tab**: Encode observations to latent space, view reconstructions, explore latent representations
+- **Memory (M) Tab**: Predict future latent states, visualize RNN predictions over multiple steps
+- **Controller (C) Tab**: Generate actions from latent states, view action probabilities and statistics
+- **Simulation Tab**: Run full world model simulation showing observation → V → latent → M → predicted → C → action pipeline
 
 ## Requirements
 
