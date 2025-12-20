@@ -61,6 +61,21 @@ Deep dive into attention with KV cache details, actual Q/K/V values, and per-hea
 - **Token Embeddings**: See how inputs become vectors
 - **Next Token Prediction**: Step-by-step generation process
 
+### 🎨 Diffusion Model Visualization
+- **Text-to-Image Generation**: Stable Diffusion models for creating images from text
+- **Step-by-Step Denoising**: Watch the image emerge from noise through each denoising step
+- **Latent Space Visualization**: See how images are represented in compressed latent space
+- **Interactive Generation**: 
+  - Adjust inference steps, guidance scale, and seed
+  - View intermediate images at each step
+  - Monitor latent space statistics (mean, std, min, max)
+- **Educational Explanations**:
+  - Forward and reverse diffusion process
+  - U-Net architecture and noise prediction
+  - VAE encoding/decoding
+  - Classifier-free guidance mechanism
+- **Supported Models**: Stable Diffusion v1.4, v1.5, v2.1
+
 ## Architecture
 
 ```
@@ -136,6 +151,12 @@ npm run dev
 - **Embeddings Tab**: Visualize token representations
 - **Generation Tab**: Watch step-by-step token generation
 - **Output Tab**: See final predictions with confidence scores
+
+### Diffusion Mode
+- **How It Works Tab**: Comprehensive explanation of diffusion models, forward/reverse diffusion, guidance, and latent space
+- **Generate Tab**: Create images from text prompts with adjustable parameters
+- **Process Tab**: View step-by-step denoising with intermediate images and latent statistics
+- **Architecture Tab**: Explore U-Net, VAE, and text encoder components
 
 ## Requirements
 

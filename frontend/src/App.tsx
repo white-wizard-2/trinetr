@@ -7,9 +7,11 @@ import ActivationVisualizer from './components/ActivationVisualizer'
 import PredictionViewer from './components/PredictionViewer'
 import TransformerLoader from './components/TransformerLoader'
 import TransformerWorkspace from './components/TransformerWorkspace'
+import DiffusionLoader from './components/DiffusionLoader'
+import DiffusionWorkspace from './components/DiffusionWorkspace'
 import './App.css'
 
-type ModelType = 'cnn' | 'transformer'
+type ModelType = 'cnn' | 'transformer' | 'diffusion'
 
 function App() {
   const [modelType, setModelType] = useState<ModelType>('cnn')
@@ -21,6 +23,10 @@ function App() {
   const [transformerModelId, setTransformerModelId] = useState<string | null>(null)
   const [transformerModelName, setTransformerModelName] = useState<string>('bert-base')
   const [transformerType, setTransformerType] = useState<'text' | 'image'>('text')
+  
+  // Diffusion state
+  const [diffusionModelId, setDiffusionModelId] = useState<string | null>(null)
+  const [diffusionModelName, setDiffusionModelName] = useState<string>('stable-diffusion-v1-4')
 
   // Load default image on mount
   useEffect(() => {
@@ -42,6 +48,7 @@ function App() {
     setModelType(type)
     setModelId(null)
     setTransformerModelId(null)
+    setDiffusionModelId(null)
     setSelectedLayer(null)
   }
 
@@ -66,6 +73,12 @@ function App() {
             >
               🔀 Transformer
             </button>
+            <button 
+              className={`type-btn ${modelType === 'diffusion' ? 'active' : ''}`}
+              onClick={() => handleModelTypeChange('diffusion')}
+            >
+              🎨 Diffusion
+            </button>
           </div>
           <div className="header-divider" />
           {modelType === 'cnn' ? (
@@ -74,7 +87,7 @@ function App() {
               <div className="header-divider" />
               <ImageUploader onImageUpload={setImageFile} imageFile={imageFile} />
             </>
-          ) : (
+          ) : modelType === 'transformer' ? (
             <TransformerLoader 
               onModelLoaded={(id, name) => {
                 setTransformerModelId(id)
@@ -82,6 +95,13 @@ function App() {
               }}
               onTypeChange={setTransformerType}
               transformerType={transformerType}
+            />
+          ) : (
+            <DiffusionLoader 
+              onModelLoaded={(id, name) => {
+                setDiffusionModelId(id)
+                setDiffusionModelName(name)
+              }}
             />
           )}
         </div>
@@ -142,13 +162,18 @@ function App() {
               </div>
             </div>
           </div>
-        ) : (
+        ) : modelType === 'transformer' ? (
           <TransformerWorkspace 
             modelId={transformerModelId}
             modelName={transformerModelName}
             transformerType={transformerType}
             imageFile={imageFile}
             onImageUpload={setImageFile}
+          />
+        ) : (
+          <DiffusionWorkspace 
+            modelId={diffusionModelId}
+            modelName={diffusionModelName}
           />
         )}
       </main>

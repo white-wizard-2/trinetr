@@ -1751,6 +1751,278 @@ async def get_transformer_architecture(model_id: str):
         "total_params": sum(p.numel() for p in model.parameters())
     }
 
+# ============== DIFFUSION MODELS ==============
+
+# Storage for diffusion models
+loaded_diffusion_models = {}
+
+# Diffusion model configurations
+DIFFUSION_MODELS = {
+    'stable-diffusion-v1-4': {
+        'hf_name': 'CompVis/stable-diffusion-v1-4',
+        'description': 'Stable Diffusion v1.4 - Text-to-image generation',
+        'requires_safety_checker': True
+    },
+    'stable-diffusion-v1-5': {
+        'hf_name': 'runwayml/stable-diffusion-v1-5',
+        'description': 'Stable Diffusion v1.5 - Improved version',
+        'requires_safety_checker': True
+    },
+    'stable-diffusion-2-1': {
+        'hf_name': 'stabilityai/stable-diffusion-2-1',
+        'description': 'Stable Diffusion 2.1 - Latest stable version',
+        'requires_safety_checker': True
+    },
+}
+
+class DiffusionGenerateRequest(BaseModel):
+    prompt: str
+    num_inference_steps: int = 50
+    guidance_scale: float = 7.5
+    seed: Optional[int] = None
+    return_intermediates: bool = True  # Return intermediate steps for visualization
+
+@app.post("/diffusion/load")
+async def load_diffusion_model(model_name: str):
+    """Load a diffusion model"""
+    try:
+        from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
+        import torch
+        
+        if model_name not in DIFFUSION_MODELS:
+            raise HTTPException(status_code=400, detail=f"Unknown model: {model_name}")
+        
+        config = DIFFUSION_MODELS[model_name]
+        hf_name = config['hf_name']
+        
+        model_id = f"{model_name}_{len(loaded_diffusion_models)}"
+        
+        # Load the pipeline
+        # Use CPU by default, but allow GPU if available
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.float16 if device == "cuda" else torch.float32
+        
+        try:
+            pipe = StableDiffusionPipeline.from_pretrained(
+                hf_name,
+                torch_dtype=dtype,
+                safety_checker=None,  # Disable safety checker for visualization
+                requires_safety_checker=False
+            )
+            pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+            pipe = pipe.to(device)
+            pipe.enable_attention_slicing()  # Reduce memory usage
+        except Exception as e:
+            # Fallback: try loading without safety checker
+            pipe = StableDiffusionPipeline.from_pretrained(
+                hf_name,
+                torch_dtype=dtype
+            )
+            pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
+            pipe = pipe.to(device)
+            pipe.enable_attention_slicing()
+        
+        loaded_diffusion_models[model_id] = {
+            'pipeline': pipe,
+            'model_name': model_name,
+            'config': config,
+            'device': device
+        }
+        
+        return {
+            "model_id": model_id,
+            "model_name": model_name,
+            "device": device,
+            "description": config['description']
+        }
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="diffusers library not installed. Install with: pip install diffusers accelerate"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load model: {str(e)}")
+
+@app.post("/diffusion/{model_id}/generate")
+async def generate_diffusion_image(model_id: str, request: DiffusionGenerateRequest):
+    """Generate an image using diffusion model with step-by-step visualization"""
+    if model_id not in loaded_diffusion_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    try:
+        import torch
+        from diffusers import DPMSolverMultistepScheduler
+        
+        model_data = loaded_diffusion_models[model_id]
+        pipe = model_data['pipeline']
+        device = model_data['device']
+        
+        # Set seed for reproducibility
+        generator = None
+        if request.seed is not None:
+            generator = torch.Generator(device=device).manual_seed(request.seed)
+        
+        # Store intermediate latents for visualization
+        intermediate_steps = []
+        intermediate_images = []
+        
+        # Custom callback to capture intermediate states
+        def callback_fn(step, timestep, latents):
+            if request.return_intermediates and step % max(1, request.num_inference_steps // 10) == 0:
+                # Store latent statistics
+                latents_np = latents.cpu().numpy()
+                intermediate_steps.append({
+                    'step': step,
+                    'timestep': float(timestep),
+                    'latent_shape': list(latents.shape),
+                    'latent_stats': {
+                        'mean': float(latents_np.mean()),
+                        'std': float(latents_np.std()),
+                        'min': float(latents_np.min()),
+                        'max': float(latents_np.max())
+                    }
+                })
+                
+                # Decode intermediate latent to image (optional, can be slow)
+                try:
+                    with torch.no_grad():
+                        # VAE decode
+                        latents_1_over_sigma = 1 / pipe.vae.config.scaling_factor
+                        image = pipe.vae.decode(latents * latents_1_over_sigma).sample
+                        image = (image / 2 + 0.5).clamp(0, 1)
+                        image = image.cpu().permute(0, 2, 3, 1).numpy()
+                        image = (image * 255).astype(np.uint8)
+                        
+                        # Convert to base64
+                        img_pil = Image.fromarray(image[0])
+                        buffer = io.BytesIO()
+                        img_pil.save(buffer, format='PNG')
+                        img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                        
+                        intermediate_images.append({
+                            'step': step,
+                            'timestep': float(timestep),
+                            'image': img_base64
+                        })
+                except Exception:
+                    # Skip image decoding if it fails (can be memory intensive)
+                    pass
+        
+        # Generate image
+        with torch.no_grad():
+            result = pipe(
+                prompt=request.prompt,
+                num_inference_steps=request.num_inference_steps,
+                guidance_scale=request.guidance_scale,
+                generator=generator,
+                callback=callback_fn if request.return_intermediates else None,
+                callback_steps=1
+            )
+        
+        # Convert final image to base64
+        final_image = result.images[0]
+        buffer = io.BytesIO()
+        final_image.save(buffer, format='PNG')
+        final_image_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        
+        # Get model architecture info
+        unet = pipe.unet
+        vae = pipe.vae
+        text_encoder = pipe.text_encoder
+        
+        architecture_info = {
+            'unet': {
+                'input_channels': unet.config.in_channels,
+                'output_channels': unet.config.out_channels,
+                'block_out_channels': unet.config.block_out_channels,
+                'attention_head_dim': unet.config.attention_head_dim,
+                'num_attention_heads': unet.config.num_attention_heads,
+                'cross_attention_dim': unet.config.cross_attention_dim,
+            },
+            'vae': {
+                'latent_channels': vae.config.latent_channels,
+                'sample_size': vae.config.sample_size,
+            },
+            'text_encoder': {
+                'max_position_embeddings': text_encoder.config.max_position_embeddings,
+                'hidden_size': text_encoder.config.hidden_size,
+            },
+            'scheduler': {
+                'type': type(pipe.scheduler).__name__,
+                'num_train_timesteps': pipe.scheduler.config.num_train_timesteps,
+            }
+        }
+        
+        return {
+            "image": final_image_base64,
+            "prompt": request.prompt,
+            "intermediate_steps": intermediate_steps,
+            "intermediate_images": intermediate_images,
+            "architecture_info": architecture_info,
+            "generation_params": {
+                "num_inference_steps": request.num_inference_steps,
+                "guidance_scale": request.guidance_scale,
+                "seed": request.seed
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+@app.get("/diffusion/{model_id}/architecture")
+async def get_diffusion_architecture(model_id: str):
+    """Get architecture information for a diffusion model"""
+    if model_id not in loaded_diffusion_models:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    model_data = loaded_diffusion_models[model_id]
+    pipe = model_data['pipeline']
+    
+    unet = pipe.unet
+    vae = pipe.vae
+    text_encoder = pipe.text_encoder
+    
+    layers = []
+    
+    # UNet layers
+    for name, module in unet.named_modules():
+        if len(list(module.children())) == 0:  # Leaf module
+            layer_type = type(module).__name__
+            layers.append({
+                "name": name,
+                "type": layer_type,
+                "parameters": sum(p.numel() for p in module.parameters()) if hasattr(module, 'parameters') else 0
+            })
+    
+    return {
+        "model_name": model_data['model_name'],
+        "components": {
+            "unet": {
+                "type": "U-Net (Noise Predictor)",
+                "description": "Predicts noise to remove at each denoising step",
+                "input_channels": unet.config.in_channels,
+                "output_channels": unet.config.out_channels,
+                "layers": len([l for l in layers if 'unet' in l['name'].lower() or 'down' in l['name'].lower() or 'up' in l['name'].lower()])
+            },
+            "vae": {
+                "type": "VAE (Variational Autoencoder)",
+                "description": "Encodes images to latent space and decodes back",
+                "latent_channels": vae.config.latent_channels,
+            },
+            "text_encoder": {
+                "type": "CLIP Text Encoder",
+                "description": "Encodes text prompt into embeddings",
+                "hidden_size": text_encoder.config.hidden_size,
+            },
+            "scheduler": {
+                "type": type(pipe.scheduler).__name__,
+                "description": "Controls the denoising schedule",
+            }
+        },
+        "total_params": sum(p.numel() for p in pipe.unet.parameters()) + 
+                       sum(p.numel() for p in pipe.vae.parameters()) + 
+                       sum(p.numel() for p in pipe.text_encoder.parameters())
+    }
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
